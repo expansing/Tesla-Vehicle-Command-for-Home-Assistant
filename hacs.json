@@ -1,0 +1,24 @@
+{
+  "name": "Tesla Vehicle Command",
+  "description": "Control your Tesla using the new end-to-end command authentication protocol. Supports Model 3/Y (all years) and 2021+ Model S/X.",
+  "version": "0.1.0",
+  "author": "expansing",
+  "category": "integration",
+  "homepage": "https://github.com/expansing/tesla_vehicle_command",
+  "repository": "https://github.com/expansing/tesla_vehicle_command",
+  "documentation": "https://github.com/expansing/tesla_vehicle_command/blob/main/SETUP_GUIDE.md",
+  "issues": "https://github.com/expansing/tesla_vehicle_command/issues",
+  "requirements": [
+    "aiohttp>=3.9.0",
+    "cryptography>=42.0.0",
+    "pyjwt>=2.8.0"
+  ],
+  "dependencies": [],
+  "iot_class": "cloud_polling",
+  "config_flow": true,
+  "manifest": {
+    "domain": "tesla_vehicle_command",
+    "name": "Tesla Vehicle Command",
+    "version": "0.1.0"
+  }
+}
