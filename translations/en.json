@@ -1,0 +1,154 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Tesla Vehicle Command Setup",
+        "description": "Enter your Tesla Developer App credentials. You can create an app at https://developer.tesla.com",
+        "data": {
+          "client_id": "Client ID",
+          "client_secret": "Client Secret"
+        }
+      },
+      "vehicles": {
+        "title": "Select Vehicles",
+        "description": "Choose which vehicles to add to Home Assistant",
+        "data": {
+          "vehicles": "Vehicles"
+        }
+      },
+      "key": {
+        "title": "Private Key",
+        "description": "Generate a new key pair or import an existing private key. After setup, you must enroll the public key in the Tesla mobile app (Security → Vehicle Commands → Add Key).",
+        "data": {
+          "key_action": "Action",
+          "private_key": "Private Key (PEM format)"
+        }
+      }
+    },
+    "error": {
+      "auth_failed": "Failed to generate authorization URL",
+      "fetch_vehicles_failed": "Failed to fetch vehicle list",
+      "no_vehicles": "No vehicles found on this account",
+      "invalid_state": "Invalid OAuth state",
+      "token_exchange_failed": "Failed to exchange authorization code for tokens",
+      "invalid_action": "Invalid key action",
+      "required": "Required field"
+    },
+    "abort": {
+      "missing_code_or_state": "Missing authorization code or state",
+      "invalid_state": "Invalid OAuth state",
+      "token_exchange_failed": "Token exchange failed"
+    }
+  },
+  "entity": {
+    "sensor": {
+      "battery_level": { "name": "Battery Level" },
+      "battery_range": { "name": "Battery Range" },
+      "ideal_battery_range": { "name": "Ideal Battery Range" },
+      "charging_state": { "name": "Charging State" },
+      "charge_limit": { "name": "Charge Limit" },
+      "charge_current": { "name": "Charge Current" },
+      "charge_power": { "name": "Charge Power" },
+      "charge_energy_added": { "name": "Charge Energy Added" },
+      "time_to_full_charge": { "name": "Time to Full Charge" },
+      "inside_temp": { "name": "Inside Temperature" },
+      "outside_temp": { "name": "Outside Temperature" },
+      "driver_temp_setting": { "name": "Driver Temperature Setting" },
+      "passenger_temp_setting": { "name": "Passenger Temperature Setting" },
+      "is_climate_on": { "name": "Climate On" },
+      "fan_status": { "name": "Fan Status" },
+      "odometer": { "name": "Odometer" },
+      "speed": { "name": "Speed" },
+      "latitude": { "name": "Latitude" },
+      "longitude": { "name": "Longitude" },
+      "heading": { "name": "Heading" },
+      "shift_state": { "name": "Shift State" },
+      "locked": { "name": "Locked" },
+      "sentry_mode": { "name": "Sentry Mode" },
+      "fd_window": { "name": "Front Driver Window" },
+      "fp_window": { "name": "Front Passenger Window" },
+      "rd_window": { "name": "Rear Driver Window" },
+      "rp_window": { "name": "Rear Passenger Window" },
+      "ft": { "name": "Front Trunk" },
+      "trunk": { "name": "Rear Trunk" },
+      "car_version": { "name": "Software Version" },
+      "tpms_fl": { "name": "Front Left Tire Pressure" },
+      "tpms_fr": { "name": "Front Right Tire Pressure" },
+      "tpms_rl": { "name": "Rear Left Tire Pressure" },
+      "tpms_rr": { "name": "Rear Right Tire Pressure" }
+    },
+    "climate": {
+      "climate": { "name": "Climate" }
+    },
+    "lock": {
+      "door_lock": { "name": "Door Lock" }
+    },
+    "cover": {
+      "rear_trunk": { "name": "Trunk" },
+      "front_trunk": { "name": "Frunk" },
+      "windows": { "name": "Windows" },
+      "sunroof": { "name": "Sunroof" }
+    },
+    "switch": {
+      "sentry_mode": { "name": "Sentry Mode" },
+      "charge_port": { "name": "Charge Port" },
+      "defrost": { "name": "Defrost" }
+    },
+    "number": {
+      "charge_limit": { "name": "Charge Limit" },
+      "target_temperature": { "name": "Target Temperature" }
+    },
+    "select": {
+      "seat_heater_0": { "name": "Front Left Seat Heater" },
+      "seat_heater_1": { "name": "Front Right Seat Heater" },
+      "seat_heater_2": { "name": "Rear Left Seat Heater" },
+      "seat_heater_3": { "name": "Rear Right Seat Heater" },
+      "seat_heater_4": { "name": "Third Row Left Seat Heater" },
+      "seat_heater_5": { "name": "Third Row Right Seat Heater" },
+      "steering_heater": { "name": "Steering Wheel Heater" }
+    },
+    "button": {
+      "wake_up": { "name": "Wake Up" },
+      "honk_horn": { "name": "Honk Horn" },
+      "flash_lights": { "name": "Flash Lights" },
+      "open_charge_port": { "name": "Open Charge Port" },
+      "close_charge_port": { "name": "Close Charge Port" },
+      "open_trunk": { "name": "Open Trunk" },
+      "open_frunk": { "name": "Open Frunk" },
+      "vent_windows": { "name": "Vent Windows" },
+      "close_windows": { "name": "Close Windows" },
+      "preconditioning_start": { "name": "Start Battery Preconditioning" },
+      "preconditioning_stop": { "name": "Stop Battery Preconditioning" }
+    }
+  },
+  "services": {
+    "set_valet_mode": {
+      "name": "Set Valet Mode",
+      "description": "Enable or disable valet mode",
+      "fields": {
+        "vin": { "name": "Vehicle VIN", "description": "VIN of the vehicle" },
+        "enabled": { "name": "Enabled", "description": "Enable or disable valet mode" },
+        "pin": { "name": "PIN", "description": "4-digit PIN for valet mode (required when enabling)" }
+      }
+    },
+    "set_speed_limit": {
+      "name": "Set Speed Limit",
+      "description": "Activate speed limit mode",
+      "fields": {
+        "vin": { "name": "Vehicle VIN", "description": "VIN of the vehicle" },
+        "speed_limit": { "name": "Speed Limit", "description": "Speed limit in km/h" },
+        "pin": { "name": "PIN", "description": "4-digit PIN for speed limit" }
+      }
+    },
+    "send_navigation": {
+      "name": "Send Navigation Destination",
+      "description": "Send a destination to the vehicle navigation",
+      "fields": {
+        "vin": { "name": "Vehicle VIN", "description": "VIN of the vehicle" },
+        "latitude": { "name": "Latitude", "description": "Destination latitude" },
+        "longitude": { "name": "Longitude", "description": "Destination longitude" },
+        "name": { "name": "Location Name", "description": "Name of the destination" }
+      }
+    }
+  }
+}
