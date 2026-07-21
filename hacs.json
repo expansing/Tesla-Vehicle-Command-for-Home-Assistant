@@ -6,7 +6,7 @@
   "category": "integration",
   "homepage": "https://github.com/expansing/tesla_vehicle_command",
   "repository": "https://github.com/expansing/tesla_vehicle_command",
-  "documentation": "https://github.com/expansing/tesla_vehicle_command/blob/main/SETUP_GUIDE.md",
+  "documentation": "https://github.com/expansing/tesla_vehicle_command/blob/main/README.md",
   "issues": "https://github.com/expansing/tesla_vehicle_command/issues",
   "requirements": [
     "aiohttp>=3.9.0",
