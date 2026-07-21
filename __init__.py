@@ -1,0 +1,150 @@
+"""Tesla Vehicle Command integration for Home Assistant."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from homeassistant.config_entries import ConfigEntry
+from homeassistant.const import Platform
+from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.exceptions import ConfigEntryNotReady
+from homeassistant.helpers import config_validation as cv
+import voluptuous as vol
+
+from .const import DOMAIN
+from .coordinator import TeslaVehicleCommandCoordinator
+from .proxy_manager import ProxyManager
+
+PLATFORMS: list[Platform] = [
+    Platform.SENSOR,
+    Platform.CLIMATE,
+    Platform.LOCK,
+    Platform.COVER,
+    Platform.SWITCH,
+    Platform.NUMBER,
+    Platform.BUTTON,
+    Platform.SELECT,
+]
+
+_LOGGER = logging.getLogger(__name__)
+
+# Service schemas
+SERVICE_SET_VALET_MODE_SCHEMA = vol.Schema({
+    vol.Required("vin"): cv.string,
+    vol.Required("enabled"): cv.boolean,
+    vol.Optional("pin"): cv.string,
+})
+
+SERVICE_SET_SPEED_LIMIT_SCHEMA = vol.Schema({
+    vol.Required("vin"): cv.string,
+    vol.Required("speed_limit"): vol.All(vol.Coerce(int), vol.Range(min=30, max=200)),
+    vol.Required("pin"): cv.string,
+})
+
+SERVICE_SEND_NAVIGATION_SCHEMA = vol.Schema({
+    vol.Required("vin"): cv.string,
+    vol.Required("latitude"): vol.Coerce(float),
+    vol.Required("longitude"): vol.Coerce(float),
+    vol.Optional("name"): cv.string,
+})
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Set up Tesla Vehicle Command from a config entry."""
+    hass.data.setdefault(DOMAIN, {})
+
+    # Initialize proxy manager
+    proxy_manager = ProxyManager(hass, entry)
+    await proxy_manager.async_start()
+
+    if not proxy_manager.is_running:
+        await proxy_manager.async_stop()
+        raise ConfigEntryNotReady("Failed to start Tesla HTTP proxy")
+
+    # Initialize coordinator
+    coordinator = TeslaVehicleCommandCoordinator(hass, entry, proxy_manager)
+    await coordinator.async_config_entry_first_refresh()
+
+    hass.data[DOMAIN][entry.entry_id] = {
+        "coordinator": coordinator,
+        "proxy_manager": proxy_manager,
+    }
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    # Register services
+    async def handle_set_valet_mode(call: ServiceCall) -> None:
+        """Handle set valet mode service."""
+        vin = call.data["vin"]
+        enabled = call.data["enabled"]
+        pin = call.data.get("pin", "")
+
+        if enabled and not pin:
+            raise ValueError("PIN required when enabling valet mode")
+
+        if enabled:
+            await coordinator.async_send_command(vin, "valet_mode_on", {"pin": pin})
+        else:
+            await coordinator.async_send_command(vin, "valet_mode_off")
+
+        await coordinator.async_request_refresh()
+
+    async def handle_set_speed_limit(call: ServiceCall) -> None:
+        """Handle set speed limit service."""
+        vin = call.data["vin"]
+        speed_limit = call.data["speed_limit"]
+        pin = call.data["pin"]
+
+        await coordinator.async_send_command(vin, "speed_limit", {"speed_limit": speed_limit, "pin": pin})
+        await coordinator.async_request_refresh()
+
+    async def handle_send_navigation(call: ServiceCall) -> None:
+        """Handle send navigation service."""
+        vin = call.data["vin"]
+        latitude = call.data["latitude"]
+        longitude = call.data["longitude"]
+        name = call.data.get("name", "Home Assistant Destination")
+
+        await coordinator.async_send_command(vin, "send_navigation", {
+            "latitude": latitude,
+            "longitude": longitude,
+            "name": name,
+        })
+        await coordinator.async_request_refresh()
+
+    hass.services.async_register(
+        DOMAIN, "set_valet_mode", handle_set_valet_mode, schema=SERVICE_SET_VALET_MODE_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, "set_speed_limit", handle_set_speed_limit, schema=SERVICE_SET_SPEED_LIMIT_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN, "send_navigation", handle_send_navigation, schema=SERVICE_SEND_NAVIGATION_SCHEMA
+    )
+
+    entry.async_on_unload(entry.add_update_listener(async_update_options))
+
+    return True
+
+
+async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Unload a config entry."""
+    unload_ok = await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+    if unload_ok:
+        data = hass.data[DOMAIN].pop(entry.entry_id)
+        await data["proxy_manager"].async_stop()
+
+    return unload_ok
+
+
+async def async_update_options(hass: HomeAssistant, entry: ConfigEntry) -> None:
+    """Update options."""
+    await hass.config_entries.async_reload(entry.entry_id)
+
+
+async def async_migrate_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+    """Migrate old entry."""
+    _LOGGER.debug("Migrating from version %s", entry.version)
+    return True

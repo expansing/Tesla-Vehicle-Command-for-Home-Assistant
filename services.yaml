@@ -1,0 +1,162 @@
+# Tesla Vehicle Command Services
+
+tesla_vehicle_command.set_charge_schedule:
+  name: Set Charge Schedule
+  description: Set scheduled charging for the vehicle
+  fields:
+    vin:
+      name: Vehicle VIN
+      description: VIN of the vehicle
+      required: true
+      selector:
+        text:
+    start_time:
+      name: Start Time
+      description: Time to start charging (HH:MM format)
+      required: true
+      selector:
+        time:
+    days:
+      name: Days
+      description: Days of the week to apply schedule
+      required: true
+      selector:
+        select:
+          options:
+            - monday
+            - tuesday
+            - wednesday
+            - thursday
+            - friday
+            - saturday
+            - sunday
+          multiple: true
+
+tesla_vehicle_command.set_precondition_schedule:
+  name: Set Precondition Schedule
+  description: Set scheduled preconditioning for the vehicle
+  fields:
+    vin:
+      name: Vehicle VIN
+      description: VIN of the vehicle
+      required: true
+      selector:
+        text:
+    start_time:
+      name: Start Time
+      description: Time to start preconditioning (HH:MM format)
+      required: true
+      selector:
+        time:
+    days:
+      name: Days
+      description: Days of the week to apply schedule
+      required: true
+      selector:
+        select:
+          options:
+            - monday
+            - tuesday
+            - wednesday
+            - thursday
+            - friday
+            - saturday
+            - sunday
+          multiple: true
+    target_temp:
+      name: Target Temperature
+      description: Target cabin temperature in Celsius
+      required: true
+      selector:
+        number:
+          min: 15
+          max: 28
+          step: 0.5
+          unit_of_measurement: "°C"
+
+tesla_vehicle_command.send_navigation:
+  name: Send Navigation Destination
+  description: Send a destination to the vehicle navigation
+  fields:
+    vin:
+      name: Vehicle VIN
+      description: VIN of the vehicle
+      required: true
+      selector:
+        text:
+    latitude:
+      name: Latitude
+      description: Destination latitude
+      required: true
+      selector:
+        number:
+          min: -90
+          max: 90
+          step: 0.000001
+    longitude:
+      name: Longitude
+      description: Destination longitude
+      required: true
+      selector:
+        number:
+          min: -180
+          max: 180
+          step: 0.000001
+    name:
+      name: Location Name
+      description: Name of the destination
+      required: false
+      selector:
+        text:
+
+tesla_vehicle_command.set_valet_mode:
+  name: Set Valet Mode
+  description: Enable or disable valet mode
+  fields:
+    vin:
+      name: Vehicle VIN
+      description: VIN of the vehicle
+      required: true
+      selector:
+        text:
+    enabled:
+      name: Enabled
+      description: Enable or disable valet mode
+      required: true
+      selector:
+        boolean:
+    pin:
+      name: PIN
+      description: 4-digit PIN for valet mode (required when enabling)
+      required: false
+      selector:
+        text:
+          type: password
+
+tesla_vehicle_command.set_speed_limit:
+  name: Set Speed Limit
+  description: Activate speed limit mode
+  fields:
+    vin:
+      name: Vehicle VIN
+      description: VIN of the vehicle
+      required: true
+      selector:
+        text:
+    speed_limit:
+      name: Speed Limit
+      description: Speed limit in km/h
+      required: true
+      selector:
+        number:
+          min: 30
+          max: 200
+          step: 5
+          unit_of_measurement: "km/h"
+    pin:
+      name: PIN
+      description: 4-digit PIN for speed limit
+      required: true
+      selector:
+        text:
+          type: password
