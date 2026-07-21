@@ -1,19 +1,14 @@
 {
   "domain": "tesla_vehicle_command",
   "name": "Tesla Vehicle Command",
-  "documentation": "https://github.com/teslamotors/vehicle-command",
-  "requirements": ["aiohttp>=3.9.0", "cryptography>=42.0.0"],
+  "documentation": "https://github.com/expansing/tesla_vehicle_command",
+  "requirements": ["aiohttp>=3.9.0", "cryptography>=42.0.0", "pyjwt>=2.8.0"],
   "version": "0.1.0",
-  "codeowners": ["@teslamotors"],
+  "codeowners": ["@expansing"],
   "config_flow": true,
   "dependencies": [],
   "homekit": {},
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/teslamotors/vehicle-command/issues",
-  "loggers": ["tesla_vehicle_command"],
-  "requirements": [
-    "aiohttp>=3.9.0",
-    "cryptography>=42.0.0",
-    "pyjwt>=2.8.0"
-  ]
+  "issue_tracker": "https://github.com/expansing/tesla_vehicle_command/issues",
+  "loggers": ["tesla_vehicle_command"]
 }
