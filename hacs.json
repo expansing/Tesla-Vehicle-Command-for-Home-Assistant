@@ -16,6 +16,7 @@
   "dependencies": [],
   "iot_class": "cloud_polling",
   "config_flow": true,
+  "content_in_root": true,
   "manifest": {
     "domain": "tesla_vehicle_command",
     "name": "Tesla Vehicle Command",
