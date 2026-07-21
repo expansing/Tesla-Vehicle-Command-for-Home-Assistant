@@ -38,7 +38,9 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
-# Step 2: OAuth callback - handled by external callback
+# Step 2: OAuth authorization URL display
+STEP_AUTH_DATA_SCHEMA = vol.Schema({})
+
 # Step 3: Vehicle selection
 STEP_VEHICLE_SCHEMA = vol.Schema(
     {
@@ -72,6 +74,7 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._refresh_token: str | None = None
         self._vehicles: list[dict[str, Any]] = []
         self._selected_vehicles: list[str] = []
+        self._auth_url: str | None = None
 
     async def async_step_user(
         self, user_input: dict[str, Any] | None = None
@@ -85,8 +88,8 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
             # Validate credentials by trying to get auth URL
             try:
-                auth_url = await self._generate_auth_url()
-                return await self._async_show_oauth_step(auth_url)
+                self._auth_url = await self._generate_auth_url()
+                return await self.async_step_auth()
             except Exception as err:
                 _LOGGER.error("Failed to generate auth URL: %s", err)
                 errors["base"] = "auth_failed"
@@ -100,12 +103,28 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             },
         )
 
+    async def async_step_auth(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Show the authorization URL and wait for user to complete OAuth."""
+        if user_input is not None:
+            # User clicked "Continue" after authorizing
+            return await self.async_step_vehicles()
+
+        return self.async_show_form(
+            step_id="auth",
+            data_schema=STEP_AUTH_DATA_SCHEMA,
+            description_placeholders={
+                "auth_url": self._auth_url or "",
+                "redirect_uri": f"{self.hass.config.external_url}/auth/external/callback",
+            },
+        )
+
     async def _generate_auth_url(self) -> str:
         """Generate Tesla OAuth authorization URL."""
         self._oauth_state = secrets.token_urlsafe(32)
 
         # Redirect URI must match what's configured in Tesla developer portal
-        # For HA, we use the external callback URL
         redirect_uri = f"{self.hass.config.external_url}/auth/external/callback"
 
         params = {
@@ -117,21 +136,6 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         }
 
         return f"{OAUTH2_AUTHORIZE}?{urlencode(params)}"
-
-    async def _async_show_oauth_step(self, auth_url: str) -> FlowResult:
-        """Show OAuth authorization step."""
-        return self.async_external_step(
-            step_id="oauth",
-            url=auth_url,
-        )
-
-    async def async_step_oauth(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle OAuth callback."""
-        # This step is called after external auth completes
-        # The callback handler will exchange code for tokens
-        return await self.async_step_vehicles()
 
     async def async_step_vehicles(
         self, user_input: dict[str, Any] | None = None
@@ -341,8 +345,8 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         )
 
     async def async_oauth2_callback(self, data: dict[str, Any]) -> FlowResult:
-        """Handle OAuth2 callback."""
-        # This is called by the external auth callback handler
+        """Handle OAuth2 callback from Home Assistant's external auth."""
+        # This is called by HA's external auth callback handler
         code = data.get("code")
         state = data.get("state")
 
