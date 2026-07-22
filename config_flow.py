@@ -3,17 +3,19 @@
 from __future__ import annotations
 
 import logging
-import secrets
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import urlencode
 
 import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
-from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.config_entry_oauth2_flow import (
+    _encode_jwt,
+    async_get_redirect_uri,
+)
 
 from .const import (
     CONF_CLIENT_ID,
@@ -30,20 +32,11 @@ from .const import (
 
 _LOGGER = logging.getLogger(__name__)
 
-AUTH_NOTIFICATION_ID = f"{DOMAIN}_authorization"
-
 # Step 1: User provides OAuth credentials
 STEP_USER_DATA_SCHEMA = vol.Schema(
     {
         vol.Required(CONF_CLIENT_ID): str,
         vol.Required(CONF_CLIENT_SECRET): str,
-    }
-)
-
-# Step 2: Tesla authorization code
-STEP_AUTH_DATA_SCHEMA = vol.Schema(
-    {
-        vol.Required("authorization_code"): vol.All(str, vol.Length(min=1)),
     }
 )
 
@@ -75,7 +68,7 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Initialize the config flow."""
         self._client_id: str | None = None
         self._client_secret: str | None = None
-        self._oauth_state: str | None = None
+        self._redirect_uri: str | None = None
         self._access_token: str | None = None
         self._refresh_token: str | None = None
         self._vehicles: list[dict[str, Any]] = []
@@ -95,16 +88,6 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Validate credentials by trying to get auth URL
             try:
                 self._auth_url = await self._generate_auth_url()
-                persistent_notification.async_create(
-                    self.hass,
-                    (
-                        "[Authorize Tesla access](%s)\n\n"
-                        "After approval, copy the `code` parameter from the "
-                        "redirected URL into the Tesla Vehicle Command setup form."
-                    ) % self._auth_url,
-                    title="Tesla Vehicle Command authorization",
-                    notification_id=AUTH_NOTIFICATION_ID,
-                )
                 return await self.async_step_auth()
             except Exception as err:
                 _LOGGER.error("Failed to generate auth URL: %s", err)
@@ -122,52 +105,36 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_auth(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Exchange the Tesla authorization code for tokens."""
-        errors = {}
-
+        """Handle Tesla's OAuth callback."""
         if user_input is not None:
-            callback_value = user_input["authorization_code"].strip()
-            parsed_callback = urlparse(callback_value)
-            callback_params = parse_qs(parsed_callback.query)
-            code = callback_params.get("code", [callback_value])[0]
-            state = callback_params.get("state", [self._oauth_state])[0]
+            if "error" in user_input:
+                return self.async_abort(reason="authorize_rejected")
+            try:
+                await self._exchange_code_for_tokens(user_input["code"])
+            except Exception as err:
+                _LOGGER.error("Token exchange failed: %s", err)
+                return self.async_abort(reason="token_exchange_failed")
+            return self.async_external_step_done(next_step_id="vehicles")
 
-            if state != self._oauth_state:
-                errors["base"] = "invalid_state"
-            else:
-                try:
-                    await self._exchange_code_for_tokens(code)
-                    persistent_notification.async_dismiss(
-                        self.hass, AUTH_NOTIFICATION_ID
-                    )
-                    return await self.async_step_vehicles()
-                except Exception as err:
-                    _LOGGER.error("Token exchange failed: %s", err)
-                    errors["base"] = "token_exchange_failed"
-
-        return self.async_show_form(
+        return self.async_external_step(
             step_id="auth",
-            data_schema=STEP_AUTH_DATA_SCHEMA,
-            errors=errors,
-            description_placeholders={
-                "auth_url": self._auth_url or "",
-                "redirect_uri": f"{self.hass.config.external_url}/auth/external/callback",
-            },
+            url=self._auth_url or "",
         )
 
     async def _generate_auth_url(self) -> str:
         """Generate Tesla OAuth authorization URL."""
-        self._oauth_state = secrets.token_urlsafe(32)
-
-        # Redirect URI must match what's configured in Tesla developer portal
-        redirect_uri = f"{self.hass.config.external_url}/auth/external/callback"
+        self._redirect_uri = async_get_redirect_uri(self.hass)
+        state = _encode_jwt(
+            self.hass,
+            {"flow_id": self.flow_id, "redirect_uri": self._redirect_uri},
+        )
 
         params = {
             "client_id": self._client_id,
-            "redirect_uri": redirect_uri,
+            "redirect_uri": self._redirect_uri,
             "response_type": "code",
             "scope": " ".join(OAUTH2_SCOPES),
-            "state": self._oauth_state,
+            "state": state,
         }
 
         return f"{OAUTH2_AUTHORIZE}?{urlencode(params)}"
@@ -379,30 +346,10 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data=data,
         )
 
-    async def async_oauth2_callback(self, data: dict[str, Any]) -> FlowResult:
-        """Handle OAuth2 callback from Home Assistant's external auth."""
-        # This is called by HA's external auth callback handler
-        code = data.get("code")
-        state = data.get("state")
-
-        if not code or not state:
-            return self.async_abort(reason="missing_code_or_state")
-
-        if state != self._oauth_state:
-            return self.async_abort(reason="invalid_state")
-
-        # Exchange code for tokens
-        try:
-            await self._exchange_code_for_tokens(code)
-        except Exception as err:
-            _LOGGER.error("Token exchange failed: %s", err)
-            return self.async_abort(reason="token_exchange_failed")
-
-        return await self.async_step_vehicles()
-
     async def _exchange_code_for_tokens(self, code: str) -> None:
         """Exchange authorization code for access/refresh tokens."""
-        redirect_uri = f"{self.hass.config.external_url}/auth/external/callback"
+        if not self._redirect_uri:
+            raise RuntimeError("OAuth redirect URI is not initialized")
 
         session = async_get_clientsession(self.hass)
         token_data = {
@@ -410,7 +357,7 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "client_id": self._client_id,
             "client_secret": self._client_secret,
             "code": code,
-            "redirect_uri": redirect_uri,
+            "redirect_uri": self._redirect_uri,
         }
 
         async with session.post(
