@@ -67,16 +67,6 @@ BUTTON_DESCRIPTIONS = [
         name="Stop Battery Preconditioning",
         icon="mdi:battery-off",
     ),
-    ButtonEntityDescription(
-        key="enable_valet_mode",
-        name="Enable Valet Mode",
-        icon="mdi:shield-key",
-    ),
-    ButtonEntityDescription(
-        key="disable_valet_mode",
-        name="Disable Valet Mode",
-        icon="mdi:shield-off",
-    ),
 ]
 
 
@@ -128,10 +118,8 @@ class TeslaButtonEntity(TeslaVehicleCommandEntity, ButtonEntity):
             "open_frunk": ("trunk_front", {}),
             "vent_windows": ("window_vent", {}),
             "close_windows": ("window_close", {}),
-            "preconditioning_start": ("preconditioning_start", {}),
-            "preconditioning_stop": ("preconditioning_stop", {}),
-            "enable_valet_mode": ("valet_mode_on", {"pin": "0000"}),  # Would need PIN input
-            "disable_valet_mode": ("valet_mode_off", {}),
+            "preconditioning_start": ("climate_on", {}),
+            "preconditioning_stop": ("climate_off", {}),
         }
 
         if key not in command_map:
