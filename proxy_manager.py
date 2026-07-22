@@ -87,8 +87,9 @@ class ProxyManager:
         if not self._ca_path:
             raise RuntimeError("Proxy CA certificate is not initialized")
 
-        ssl_context = ssl.create_default_context()
-        ssl_context.load_verify_locations(self._ca_path)
+        ssl_context = await self.hass.async_add_executor_job(
+            self._create_ssl_context, self._ca_path
+        )
         session = async_get_clientsession(self.hass)
         deadline = asyncio.get_running_loop().time() + timeout
 
@@ -116,6 +117,13 @@ class ProxyManager:
             "Tesla Vehicle Command proxy add-on is not reachable. "
             "Install and start the local tesla_vehicle_command_proxy add-on."
         )
+
+    @staticmethod
+    def _create_ssl_context(ca_path: Path) -> ssl.SSLContext:
+        """Build the proxy TLS context outside Home Assistant's event loop."""
+        ssl_context = ssl.create_default_context()
+        ssl_context.load_verify_locations(ca_path)
+        return ssl_context
 
     @staticmethod
     def _prepare_proxy_files(
