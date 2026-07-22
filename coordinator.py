@@ -135,6 +135,7 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._token_expires_at = time.time() + expires_in
 
         # Update stored tokens
+        tokens = self.entry.data.get("tokens", {})
         new_tokens = {
             **tokens,
             "access_token": token_data["access_token"],
