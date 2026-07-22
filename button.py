@@ -103,6 +103,13 @@ class TeslaButtonEntity(TeslaVehicleCommandEntity, ButtonEntity):
         self._attr_unique_id = f"{vin}_{description.key}"
         self._attr_name = f"{vehicle_name} {description.name}"
 
+    @property
+    def available(self) -> bool:
+        """Return whether this command can be sent."""
+        if self.entity_description.key == "wake_up":
+            return self.coordinator.proxy_manager.is_running
+        return super().available
+
     async def async_press(self) -> None:
         """Handle button press."""
         key = self.entity_description.key
