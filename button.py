@@ -28,6 +28,11 @@ BUTTON_DESCRIPTIONS = [
         icon="mdi:car-light-high",
     ),
     ButtonEntityDescription(
+        key="fart",
+        name="Fart",
+        icon="mdi:emoticon-poop",
+    ),
+    ButtonEntityDescription(
         key="open_charge_port",
         name="Open Charge Port",
         icon="mdi:ev-plug-ccs2",
@@ -119,6 +124,7 @@ class TeslaButtonEntity(TeslaVehicleCommandEntity, ButtonEntity):
             "wake_up": ("wake_up", {}),
             "honk_horn": ("honk", {}),
             "flash_lights": ("flash", {}),
+            "fart": ("fart", {}),
             "open_charge_port": ("charge_port_open", {}),
             "close_charge_port": ("charge_port_close", {}),
             "open_trunk": ("trunk_rear", {}),
