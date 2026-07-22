@@ -5,7 +5,7 @@ from __future__ import annotations
 import logging
 import secrets
 from typing import Any
-from urllib.parse import urlencode
+from urllib.parse import parse_qs, urlencode, urlparse
 
 import aiohttp
 import voluptuous as vol
@@ -37,8 +37,12 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
     }
 )
 
-# Step 2: OAuth authorization URL display
-STEP_AUTH_DATA_SCHEMA = vol.Schema({})
+# Step 2: Tesla authorization code
+STEP_AUTH_DATA_SCHEMA = vol.Schema(
+    {
+        vol.Required("authorization_code"): vol.All(str, vol.Length(min=1)),
+    }
+)
 
 # Step 3: Vehicle selection
 STEP_VEHICLE_SCHEMA = vol.Schema(
@@ -105,14 +109,30 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_auth(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show the authorization URL and wait for user to complete OAuth."""
+        """Exchange the Tesla authorization code for tokens."""
+        errors = {}
+
         if user_input is not None:
-            # User clicked "Continue" after authorizing
-            return await self.async_step_vehicles()
+            callback_value = user_input["authorization_code"].strip()
+            parsed_callback = urlparse(callback_value)
+            callback_params = parse_qs(parsed_callback.query)
+            code = callback_params.get("code", [callback_value])[0]
+            state = callback_params.get("state", [self._oauth_state])[0]
+
+            if state != self._oauth_state:
+                errors["base"] = "invalid_state"
+            else:
+                try:
+                    await self._exchange_code_for_tokens(code)
+                    return await self.async_step_vehicles()
+                except Exception as err:
+                    _LOGGER.error("Token exchange failed: %s", err)
+                    errors["base"] = "token_exchange_failed"
 
         return self.async_show_form(
             step_id="auth",
             data_schema=STEP_AUTH_DATA_SCHEMA,
+            errors=errors,
             description_placeholders={
                 "auth_url": self._auth_url or "",
                 "redirect_uri": f"{self.hass.config.external_url}/auth/external/callback",
@@ -142,7 +162,7 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Select vehicles to add."""
         errors = {}
 
-        if user_input is not None:
+        if user_input and "vehicles" in user_input:
             self._selected_vehicles = user_input["vehicles"]
             return await self.async_step_key()
 
