@@ -88,6 +88,22 @@ The files have different purposes:
 /config/tesla_public/com.tesla.3p.public-key.pem                  Public; serve this one file to Tesla.
 ```
 
+Show the public PEM that Nginx will serve. Do not print, paste, or share the private PEM:
+
+```sh
+cat /config/tesla_public/com.tesla.3p.public-key.pem
+```
+
+Check that the hosted public PEM was derived from the private key without showing private-key material:
+
+```sh
+openssl ec -in /config/tesla_vehicle_command/keys/tesla-command-private-key.pem \
+  -pubout \
+  | diff - /config/tesla_public/com.tesla.3p.public-key.pem
+```
+
+`diff` returns no output when the public keys match.
+
 Do not generate another key later. The public key hosted for Tesla, the private key imported into Home Assistant, and the key paired with the vehicle must all be the same key pair.
 
 ## 3. Create the Local Nginx Public-Key Add-on
@@ -99,6 +115,12 @@ Home Assistant discovers local add-ons under `/addons`. Create this directory st
   config.yaml
   Dockerfile
   nginx.conf
+```
+
+Create the local add-on directory before creating the files below:
+
+```sh
+mkdir -p /addons/tesla_key_server
 ```
 
 Create `/addons/tesla_key_server/config.yaml`:
@@ -249,6 +271,24 @@ The final files must be:
 /addons/tesla_vehicle_command_proxy/run.sh
 ```
 
+Copy the proxy add-on files from this repository to the Home Assistant local add-ons directory:
+
+```sh
+REPOSITORY_DIR='<path-to-this-repository>'
+mkdir -p /addons/tesla_vehicle_command_proxy
+cp "$REPOSITORY_DIR/addons/tesla_vehicle_command_proxy/config.yaml" \
+  /addons/tesla_vehicle_command_proxy/
+cp "$REPOSITORY_DIR/addons/tesla_vehicle_command_proxy/Dockerfile" \
+  /addons/tesla_vehicle_command_proxy/
+cp "$REPOSITORY_DIR/addons/tesla_vehicle_command_proxy/run.sh" \
+  /addons/tesla_vehicle_command_proxy/
+cp "$REPOSITORY_DIR/addons/tesla_vehicle_command_proxy/icon.png" \
+  /addons/tesla_vehicle_command_proxy/
+cp "$REPOSITORY_DIR/addons/tesla_vehicle_command_proxy/logo.png" \
+  /addons/tesla_vehicle_command_proxy/
+chmod 755 /addons/tesla_vehicle_command_proxy/run.sh
+```
+
 In Home Assistant, open **Settings > Add-ons > Add-on store**, select **Check for updates**, open **Local add-ons**, then install **Tesla Vehicle Command Proxy**. Enable **Start on boot** and start it.
 
 The first log messages may say:
@@ -317,6 +357,117 @@ If the vehicle reports that the public key is not paired, do not generate a repl
 4. Vehicle data loads successfully. A `408 vehicle unavailable` means the vehicle is asleep or offline; wake it in the Tesla mobile app and retry.
 5. Test a harmless command, such as flashing lights, only after the public key is paired.
 
+## PEM and Local Add-on Commands
+
+List the files used by the key server and local proxy add-on:
+
+```sh
+ls -l /config/tesla_public/com.tesla.3p.public-key.pem
+ls -l /addons/tesla_key_server
+ls -l /addons/tesla_vehicle_command_proxy
+```
+
+Confirm the local Nginx add-on returns the public PEM after it starts:
+
+```sh
+curl --fail --show-error \
+  http://<home-assistant-host>:8099/.well-known/appspecific/com.tesla.3p.public-key.pem
+```
+
+Confirm the public Cloudflare hostname returns the same file. The response must be HTTP `200` and must not show a Cloudflare Access page or redirect:
+
+```sh
+curl --fail --show-error --location \
+  https://<tesla-key-hostname>.<your-domain>/.well-known/appspecific/com.tesla.3p.public-key.pem
+```
+
+## Optional Proxy API Diagnostics
+
+These examples call the internal Tesla proxy directly from a Home Assistant terminal that can reach the Supervisor network. They are useful for diagnostics; normal day-to-day control should use the Home Assistant entities and services.
+
+Set these values in the terminal. Use a short-lived Tesla OAuth access token and do not save it in shell history, scripts, or screenshots.
+
+```sh
+PROXY_URL='https://local-tesla-vehicle-command-proxy:4443'
+CA_FILE='/config/tesla_vehicle_command/proxy-ca.pem'
+ACCESS_TOKEN='<Tesla OAuth access token>'
+VIN='<17-character vehicle VIN>'
+
+tesla_get() {
+  curl --fail-with-body --cacert "$CA_FILE" \
+    --header "Authorization: Bearer $ACCESS_TOKEN" \
+    "$PROXY_URL$1"
+}
+
+tesla_post() {
+  curl --fail-with-body --cacert "$CA_FILE" \
+    --header "Authorization: Bearer $ACCESS_TOKEN" \
+    --header 'Content-Type: application/json' \
+    --data "$2" \
+    "$PROXY_URL$1"
+}
+```
+
+If the terminal does not resolve `local-tesla-vehicle-command-proxy`, run the commands from a terminal add-on on the Home Assistant host or use the proxy add-on container's Supervisor-network address. Do not expose port `4443` to make terminal access easier.
+
+Read vehicle data:
+
+```sh
+tesla_get "/api/1/vehicles/$VIN/vehicle_data"
+```
+
+Wake an asleep vehicle. It may take up to a minute before the vehicle accepts another command:
+
+```sh
+tesla_post "/api/1/vehicles/$VIN/wake_up" '{}'
+```
+
+Lock or unlock the vehicle:
+
+```sh
+tesla_post "/api/1/vehicles/$VIN/command/door_lock" '{}'
+tesla_post "/api/1/vehicles/$VIN/command/door_unlock" '{}'
+```
+
+Flash lights or honk the horn:
+
+```sh
+tesla_post "/api/1/vehicles/$VIN/command/flash_lights" '{}'
+tesla_post "/api/1/vehicles/$VIN/command/honk_horn" '{}'
+```
+
+Start or stop climate conditioning:
+
+```sh
+tesla_post "/api/1/vehicles/$VIN/command/auto_conditioning_start" '{}'
+tesla_post "/api/1/vehicles/$VIN/command/auto_conditioning_stop" '{}'
+```
+
+Set both cabin temperature targets in Celsius:
+
+```sh
+tesla_post "/api/1/vehicles/$VIN/command/set_temps" \
+  '{"driver_temp":21,"passenger_temp":21}'
+```
+
+Start or stop charging, or set the charge limit:
+
+```sh
+tesla_post "/api/1/vehicles/$VIN/command/charge_start" '{}'
+tesla_post "/api/1/vehicles/$VIN/command/charge_stop" '{}'
+tesla_post "/api/1/vehicles/$VIN/command/set_charge_limit" '{"percent":80}'
+```
+
+Open the charge port, rear trunk, or front trunk:
+
+```sh
+tesla_post "/api/1/vehicles/$VIN/command/charge_port_door_open" '{}'
+tesla_post "/api/1/vehicles/$VIN/command/actuate_trunk" '{"which_trunk":"rear"}'
+tesla_post "/api/1/vehicles/$VIN/command/actuate_trunk" '{"which_trunk":"front"}'
+```
+
+An HTTP `408` means the vehicle is asleep or offline. An error saying that the public key is not paired means the matching public key has not yet been enrolled with the vehicle.
+
 ## Metric Units
 
 The integration reports values in metric units:
@@ -327,6 +478,25 @@ The integration reports values in metric units:
 - Tire pressure: `bar`
 - Charge power: `kW`
 - Added energy: `kWh`
+
+## Versioning
+
+The integration version shown by Home Assistant and HACS comes from these fields:
+
+```text
+manifest.json  -> version
+hacs.json      -> version and manifest.version
+```
+
+Set all three values to the GitHub release number without the `v` prefix, then publish the matching Git tag and release, such as `v0.2.2`.
+
+The proxy add-on is independent and uses this field:
+
+```text
+addons/tesla_vehicle_command_proxy/config.yaml  -> version
+```
+
+Increase the add-on version whenever its Docker image, startup script, or configuration changes. It does not need to match the integration release version.
 
 ## Troubleshooting
 
