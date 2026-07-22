@@ -9,13 +9,6 @@
           "client_secret": "Client Secret"
         }
       },
-      "auth": {
-        "title": "Authorize Tesla Access",
-        "description": "Open this URL in a new browser tab and sign in to Tesla: {auth_url}\n\nAfter Tesla redirects you back, copy the `code` parameter (or the complete redirected URL) into the field below.",
-        "data": {
-          "authorization_code": "Authorization code or callback URL"
-        }
-      },
       "vehicles": {
         "title": "Select Vehicles",
         "description": "Choose which vehicles to add to Home Assistant",
@@ -44,7 +37,8 @@
     "abort": {
       "missing_code_or_state": "Missing authorization code or state",
       "invalid_state": "Invalid OAuth state",
-      "token_exchange_failed": "Token exchange failed"
+      "token_exchange_failed": "Token exchange failed",
+      "authorize_rejected": "Tesla authorization was rejected"
     }
   },
   "entity": {
