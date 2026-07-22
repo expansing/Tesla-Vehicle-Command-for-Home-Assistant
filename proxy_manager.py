@@ -6,14 +6,13 @@ import asyncio
 import datetime
 import ipaddress
 import logging
-import shutil
 import ssl
 from pathlib import Path
 
 import aiohttp
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
 from cryptography.x509.oid import NameOID
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -129,12 +128,34 @@ class ProxyManager:
     def _prepare_proxy_files(
         config_dir: Path, private_key_path: Path
     ) -> tuple[Path, Path, Path]:
-        """Create TLS material and copy the selected command key for the add-on."""
+        """Create TLS material and normalize the command key for the add-on."""
         config_dir.mkdir(parents=True, exist_ok=True)
         cert_path, key_path, ca_path = ProxyManager._ensure_certificates(config_dir)
 
+        try:
+            private_key = serialization.load_pem_private_key(
+                private_key_path.read_bytes(), password=None
+            )
+        except ValueError as err:
+            raise RuntimeError(
+                f"Command key at {private_key_path} is not valid PEM"
+            ) from err
+
+        if not isinstance(private_key, ec.EllipticCurvePrivateKey) or not isinstance(
+            private_key.curve, ec.SECP256R1
+        ):
+            raise RuntimeError(
+                "Command key must be an unencrypted NIST P-256 EC private key"
+            )
+
         command_key_path = config_dir / _COMMAND_KEY_FILE
-        shutil.copyfile(private_key_path, command_key_path)
+        command_key_path.write_bytes(
+            private_key.private_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PrivateFormat.TraditionalOpenSSL,
+                encryption_algorithm=serialization.NoEncryption(),
+            )
+        )
         command_key_path.chmod(0o600)
 
         return cert_path, key_path, ca_path
