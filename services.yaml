@@ -1,6 +1,6 @@
 # Tesla Vehicle Command Services
 
-tesla_vehicle_command.set_charge_schedule:
+set_charge_schedule:
   name: Set Charge Schedule
   description: Set scheduled charging for the vehicle
   fields:
@@ -32,7 +32,7 @@ tesla_vehicle_command.set_charge_schedule:
             - sunday
           multiple: true
 
-tesla_vehicle_command.set_precondition_schedule:
+set_precondition_schedule:
   name: Set Precondition Schedule
   description: Set scheduled preconditioning for the vehicle
   fields:
@@ -74,7 +74,7 @@ tesla_vehicle_command.set_precondition_schedule:
           step: 0.5
           unit_of_measurement: "°C"
 
-tesla_vehicle_command.send_navigation:
+send_navigation:
   name: Send Navigation Destination
   description: Send a destination to the vehicle navigation
   fields:
@@ -109,7 +109,7 @@ tesla_vehicle_command.send_navigation:
       selector:
         text:
 
-tesla_vehicle_command.set_valet_mode:
+set_valet_mode:
   name: Set Valet Mode
   description: Enable or disable valet mode
   fields:
@@ -133,7 +133,7 @@ tesla_vehicle_command.set_valet_mode:
         text:
           type: password
 
-tesla_vehicle_command.set_speed_limit:
+set_speed_limit:
   name: Set Speed Limit
   description: Activate speed limit mode
   fields:
