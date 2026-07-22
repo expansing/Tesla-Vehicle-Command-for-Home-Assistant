@@ -239,9 +239,18 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ssl_context = self._get_ssl_context()
 
         url = f"https://{PROXY_HOST}:{PROXY_PORT}{API_WAKE_UP.format(vin=vin)}"
-        headers = {"Authorization": f"Bearer {self._access_token}"}
+        headers = {
+            "Authorization": f"Bearer {self._access_token}",
+            "Content-Type": "application/json",
+        }
 
-        async with session.post(url, headers=headers, ssl=ssl_context, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+        async with session.post(
+            url,
+            headers=headers,
+            json={},
+            ssl=ssl_context,
+            timeout=aiohttp.ClientTimeout(total=60),
+        ) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"Wake up failed: {resp.status} - {text}")
