@@ -6,6 +6,7 @@ import logging
 import re
 from typing import Any
 from urllib.parse import urlencode
+from pathlib import Path
 
 import aiohttp
 import voluptuous as vol
@@ -311,28 +312,19 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             encryption_algorithm=serialization.NoEncryption(),
         )
 
-        # Save to config directory
         key_dir = self.hass.config.path(DOMAIN, "keys")
-        import os
-        os.makedirs(key_dir, exist_ok=True)
-
-        # Use first selected VIN for filename
         vin = self._selected_vehicles[0]
-        key_path = os.path.join(key_dir, f"{vin}.pem")
+        key_path = Path(key_dir) / f"{vin}.pem"
 
-        with open(key_path, "wb") as f:
-            f.write(pem)
-
-        # Set restrictive permissions
-        os.chmod(key_path, 0o600)
+        await self.hass.async_add_executor_job(
+            self._write_private_key, key_path, pem
+        )
 
         _LOGGER.info("Generated private key at %s", key_path)
-        return key_path
+        return str(key_path)
 
     async def _import_private_key(self, private_key_pem: str) -> str:
         """Import an existing private key."""
-        import os
-
         # Validate it's a valid PEM
         from cryptography.hazmat.primitives import serialization
 
@@ -344,20 +336,23 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except Exception as err:
             raise ValueError(f"Invalid private key: {err}")
 
-        # Save to config directory
         key_dir = self.hass.config.path(DOMAIN, "keys")
-        os.makedirs(key_dir, exist_ok=True)
-
         vin = self._selected_vehicles[0]
-        key_path = os.path.join(key_dir, f"{vin}.pem")
+        key_path = Path(key_dir) / f"{vin}.pem"
 
-        with open(key_path, "w") as f:
-            f.write(private_key_pem)
-
-        os.chmod(key_path, 0o600)
+        await self.hass.async_add_executor_job(
+            self._write_private_key, key_path, private_key_pem.encode()
+        )
 
         _LOGGER.info("Imported private key to %s", key_path)
-        return key_path
+        return str(key_path)
+
+    @staticmethod
+    def _write_private_key(key_path: Path, pem: bytes) -> None:
+        """Write a private key without blocking Home Assistant's event loop."""
+        key_path.parent.mkdir(parents=True, exist_ok=True)
+        key_path.write_bytes(pem)
+        key_path.chmod(0o600)
 
     async def _create_entry(self, private_key_path: str) -> FlowResult:
         """Create the config entry."""
