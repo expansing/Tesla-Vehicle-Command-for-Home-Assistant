@@ -43,7 +43,7 @@ FLEET_API_BASE_URL_EU = "https://fleet-api.prd.eu.vn.cloud.tesla.com"
 
 # Proxy settings
 PROXY_PORT = 4443
-PROXY_HOST = "local_tesla_vehicle_command_proxy"
+PROXY_HOST = "local-tesla-vehicle-command-proxy"
 PROXY_TIMEOUT = 30
 
 # API endpoints (proxied through tesla-http-proxy)
