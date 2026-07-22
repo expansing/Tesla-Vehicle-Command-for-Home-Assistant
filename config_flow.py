@@ -13,8 +13,8 @@ from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.config_entry_oauth2_flow import (
+    AUTH_CALLBACK_PATH,
     _encode_jwt,
-    async_get_redirect_uri,
 )
 
 from .const import (
@@ -123,7 +123,10 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     async def _generate_auth_url(self) -> str:
         """Generate Tesla OAuth authorization URL."""
-        self._redirect_uri = async_get_redirect_uri(self.hass)
+        external_url = self.hass.config.external_url
+        if not external_url:
+            raise RuntimeError("Home Assistant external URL is not configured")
+        self._redirect_uri = f"{external_url.rstrip('/')}{AUTH_CALLBACK_PATH}"
         _LOGGER.info("Tesla OAuth redirect URI: %s", self._redirect_uri)
         state = _encode_jwt(
             self.hass,
