@@ -10,6 +10,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
+from homeassistant.components import persistent_notification
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -28,6 +29,8 @@ from .const import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+AUTH_NOTIFICATION_ID = f"{DOMAIN}_authorization"
 
 # Step 1: User provides OAuth credentials
 STEP_USER_DATA_SCHEMA = vol.Schema(
@@ -92,6 +95,16 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             # Validate credentials by trying to get auth URL
             try:
                 self._auth_url = await self._generate_auth_url()
+                persistent_notification.async_create(
+                    self.hass,
+                    (
+                        "[Authorize Tesla access](%s)\n\n"
+                        "After approval, copy the `code` parameter from the "
+                        "redirected URL into the Tesla Vehicle Command setup form."
+                    ) % self._auth_url,
+                    title="Tesla Vehicle Command authorization",
+                    notification_id=AUTH_NOTIFICATION_ID,
+                )
                 return await self.async_step_auth()
             except Exception as err:
                 _LOGGER.error("Failed to generate auth URL: %s", err)
@@ -124,6 +137,9 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             else:
                 try:
                     await self._exchange_code_for_tokens(code)
+                    persistent_notification.async_dismiss(
+                        self.hass, AUTH_NOTIFICATION_ID
+                    )
                     return await self.async_step_vehicles()
                 except Exception as err:
                     _LOGGER.error("Token exchange failed: %s", err)
