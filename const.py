@@ -36,6 +36,7 @@ OAUTH2_SCOPES = [
     "vehicle_device_data",
     "vehicle_cmds",
     "vehicle_charging_cmds",
+    "vehicle_location",
 ]
 
 # Fleet API regions
@@ -76,6 +77,7 @@ COMMANDS = {
     "sunroof": "sunroof_control",
     "set_temps": "set_temps",
     "set_charge_limit": "set_charge_limit",
+    "fart": "remote_boombox",
     "wake_up": "wake_up",
 }
 
@@ -87,6 +89,7 @@ COMMAND_BODIES = {
     "sentry_off": {"on": False},
     "window_vent": {"command": "vent", "lat": 0, "lon": 0},
     "window_close": {"command": "close", "lat": 0, "lon": 0},
+    "fart": {"action": "fart"},
 }
 
 # Temperature limits (Celsius)
