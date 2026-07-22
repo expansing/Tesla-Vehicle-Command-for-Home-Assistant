@@ -208,6 +208,10 @@ class ProxyManager:
                 ),
                 critical=True,
             )
+            .add_extension(
+                x509.SubjectKeyIdentifier.from_public_key(ca_key.public_key()),
+                critical=False,
+            )
             .sign(ca_key, hashes.SHA256())
         )
 
@@ -238,6 +242,12 @@ class ProxyManager:
                     [x509.oid.ExtendedKeyUsageOID.SERVER_AUTH]
                 ),
                 critical=True,
+            )
+            .add_extension(
+                x509.AuthorityKeyIdentifier.from_issuer_public_key(
+                    ca_key.public_key()
+                ),
+                critical=False,
             )
             .add_extension(
                 x509.KeyUsage(
@@ -279,7 +289,13 @@ class ProxyManager:
             subject_alt_name = certificate.extensions.get_extension_for_class(
                 x509.SubjectAlternativeName
             ).value
+            authority_key_identifier = certificate.extensions.get_extension_for_class(
+                x509.AuthorityKeyIdentifier
+            ).value
         except (ValueError, x509.ExtensionNotFound):
             return False
 
-        return PROXY_HOST in subject_alt_name.get_values_for_type(x509.DNSName)
+        return (
+            PROXY_HOST in subject_alt_name.get_values_for_type(x509.DNSName)
+            and authority_key_identifier.key_identifier is not None
+        )
