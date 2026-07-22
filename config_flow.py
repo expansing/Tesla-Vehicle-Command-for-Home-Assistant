@@ -12,6 +12,7 @@ import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.config_entry_oauth2_flow import (
     AUTH_CALLBACK_PATH,
@@ -80,7 +81,7 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._redirect_uri: str | None = None
         self._access_token: str | None = None
         self._refresh_token: str | None = None
-        self._fleet_api_base_url = FLEET_API_BASE_URL_NA
+        self._fleet_api_base_url = FLEET_API_BASE_URL_EU
         self._vehicles: list[dict[str, Any]] = []
         self._selected_vehicles: list[str] = []
         self._auth_url: str | None = None
@@ -187,15 +188,23 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         # Build vehicle selection schema
-        vehicle_options = {
-            v["vin"]: f"{v.get('display_name', v['vin'])} ({v['vin']})"
-            for v in self._vehicles
-        }
+        vehicle_options = [
+            selector.SelectOptionDict(
+                value=vehicle["vin"],
+                label=f"{vehicle.get('display_name', vehicle['vin'])} ({vehicle['vin']})",
+            )
+            for vehicle in self._vehicles
+        ]
 
         schema = vol.Schema(
             {
                 vol.Required("vehicles"): vol.All(
-                    vol.MultiSelect(vehicle_options),
+                    selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=vehicle_options,
+                            multiple=True,
+                        )
+                    ),
                     vol.Length(min=1),
                 )
             }
