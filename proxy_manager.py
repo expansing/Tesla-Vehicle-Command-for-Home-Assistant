@@ -167,7 +167,12 @@ class ProxyManager:
         key_path = config_dir / _TLS_KEY_FILE
         ca_path = config_dir / _CA_FILE
 
-        if cert_path.is_file() and key_path.is_file() and ca_path.is_file():
+        if (
+            cert_path.is_file()
+            and key_path.is_file()
+            and ca_path.is_file()
+            and ProxyManager._certificate_matches_proxy_host(cert_path)
+        ):
             return cert_path, key_path, ca_path
 
         now = datetime.datetime.now(datetime.timezone.utc)
@@ -260,3 +265,16 @@ class ProxyManager:
         ca_path.chmod(0o644)
 
         return cert_path, key_path, ca_path
+
+    @staticmethod
+    def _certificate_matches_proxy_host(cert_path: Path) -> bool:
+        """Return whether an existing proxy certificate covers its hostname."""
+        try:
+            certificate = x509.load_pem_x509_certificate(cert_path.read_bytes())
+            subject_alt_name = certificate.extensions.get_extension_for_class(
+                x509.SubjectAlternativeName
+            ).value
+        except (ValueError, x509.ExtensionNotFound):
+            return False
+
+        return PROXY_HOST in subject_alt_name.get_values_for_type(x509.DNSName)
