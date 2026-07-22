@@ -29,6 +29,7 @@ from .const import (
 _LOGGER = logging.getLogger(__name__)
 
 _COMMAND_KEY_FILE = "proxy-command-key.pem"
+_COMMAND_PUBLIC_KEY_FILE = "proxy-command-public-key.pem"
 _CERT_FILE = "proxy-cert.pem"
 _TLS_KEY_FILE = "proxy-key.pem"
 _CA_FILE = "proxy-ca.pem"
@@ -162,6 +163,12 @@ class ProxyManager:
             )
         )
         command_key_path.chmod(0o600)
+        (config_dir / _COMMAND_PUBLIC_KEY_FILE).write_bytes(
+            private_key.public_key().public_bytes(
+                encoding=serialization.Encoding.PEM,
+                format=serialization.PublicFormat.SubjectPublicKeyInfo,
+            )
+        )
 
         return cert_path, key_path, ca_path
 
