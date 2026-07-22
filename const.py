@@ -25,6 +25,7 @@ CONF_VEHICLES = "vehicles"
 CONF_VIN = "vin"
 CONF_NAME = "name"
 CONF_PRIVATE_KEY_PATH = "private_key_path"
+CONF_UPDATE_INTERVAL = "update_interval"
 
 # OAuth2
 OAUTH2_AUTHORIZE = "https://auth.tesla.com/oauth2/v3/authorize"
@@ -105,9 +106,9 @@ SEAT_HEATER_MEDIUM = 2
 SEAT_HEATER_HIGH = 3
 
 # Update intervals
-UPDATE_INTERVAL_VEHICLE_DATA = 30
-UPDATE_INTERVAL_CHARGING = 30
-UPDATE_INTERVAL_AWAKE = 30
+DEFAULT_UPDATE_INTERVAL = 30
+MIN_UPDATE_INTERVAL = 30
+MAX_UPDATE_INTERVAL = 900
 
 # Proxy binary names by platform
 PROXY_BINARIES = {
