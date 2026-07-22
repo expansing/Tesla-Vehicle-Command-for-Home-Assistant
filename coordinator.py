@@ -20,12 +20,11 @@ from .const import (
     API_WAKE_UP,
     COMMAND_BODIES,
     COMMANDS,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     PROXY_HOST,
     PROXY_PORT,
-    UPDATE_INTERVAL_AWAKE,
-    UPDATE_INTERVAL_CHARGING,
-    UPDATE_INTERVAL_VEHICLE_DATA,
 )
 from .proxy_manager import ProxyManager
 
@@ -47,12 +46,15 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._vehicles = entry.data.get("vehicles", [])
         self._access_token: str | None = None
         self._token_expires_at: float = 0
+        self._update_interval = int(
+            entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+        )
 
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=UPDATE_INTERVAL_VEHICLE_DATA),
+            update_interval=timedelta(seconds=self._update_interval),
         )
 
     @property
@@ -263,27 +265,3 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if vehicle["vin"] == vin:
                 return vehicle
         return None
-
-    def get_update_interval(self, vehicle_data: dict[str, Any]) -> int:
-        """Determine update interval based on vehicle state."""
-        if not vehicle_data or "response" not in vehicle_data:
-            return UPDATE_INTERVAL_VEHICLE_DATA
-
-        response = vehicle_data["response"]
-        charge_state = response.get("charge_state", {})
-        drive_state = response.get("drive_state", {})
-
-        # Charging - frequent updates
-        if charge_state.get("charging_state") == "Charging":
-            return UPDATE_INTERVAL_CHARGING
-
-        # Driving - frequent updates
-        if drive_state.get("shift_state") not in (None, "P"):
-            return UPDATE_INTERVAL_AWAKE
-
-        # Awake but not charging/driving
-        if response.get("state") == "online":
-            return UPDATE_INTERVAL_AWAKE
-
-        # Asleep - normal interval
-        return UPDATE_INTERVAL_VEHICLE_DATA
