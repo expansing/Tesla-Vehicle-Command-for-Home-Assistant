@@ -124,6 +124,7 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def _generate_auth_url(self) -> str:
         """Generate Tesla OAuth authorization URL."""
         self._redirect_uri = async_get_redirect_uri(self.hass)
+        _LOGGER.info("Tesla OAuth redirect URI: %s", self._redirect_uri)
         state = _encode_jwt(
             self.hass,
             {"flow_id": self.flow_id, "redirect_uri": self._redirect_uri},
