@@ -38,6 +38,7 @@ class TeslaSensorEntityDescription(SensorEntityDescription):
     value_path: str | None = None
     unit_path: str | None = None
     conversion: str | None = None
+    value_map: dict[Any, str] | None = None
 
 
 SENSOR_DESCRIPTIONS = [
@@ -57,7 +58,7 @@ SENSOR_DESCRIPTIONS = [
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfLength.KILOMETERS,
-        value_path="charge_state.est_battery_range",
+        value_path="charge_state.battery_range",
         conversion="mi_to_km",
         icon="mdi:road",
     ),
@@ -186,7 +187,7 @@ SENSOR_DESCRIPTIONS = [
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.TOTAL_INCREASING,
         native_unit_of_measurement=UnitOfLength.KILOMETERS,
-        value_path="drive_state.odometer",
+        value_path="vehicle_state.odometer",
         conversion="mi_to_km",
         icon="mdi:counter",
     ),
@@ -222,6 +223,8 @@ SENSOR_DESCRIPTIONS = [
     TeslaSensorEntityDescription(
         key="shift_state",
         name="Shift State",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Driving", "Neutral", "Reverse", "Parking"],
         value_path="drive_state.shift_state",
         icon="mdi:car-shift-pattern",
     ),
@@ -246,37 +249,49 @@ SENSOR_DESCRIPTIONS = [
     TeslaSensorEntityDescription(
         key="fd_window",
         name="Front Driver Window",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         value_path="vehicle_state.fd_window",
         icon="mdi:car-door",
     ),
     TeslaSensorEntityDescription(
         key="fp_window",
         name="Front Passenger Window",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         value_path="vehicle_state.fp_window",
         icon="mdi:car-door",
     ),
     TeslaSensorEntityDescription(
         key="rd_window",
         name="Rear Driver Window",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         value_path="vehicle_state.rd_window",
         icon="mdi:car-door",
     ),
     TeslaSensorEntityDescription(
         key="rp_window",
         name="Rear Passenger Window",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         value_path="vehicle_state.rp_window",
         icon="mdi:car-door",
     ),
     TeslaSensorEntityDescription(
         key="ft",
-        name="Front Trunk",
+        name="Frunk",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         value_path="vehicle_state.ft",
         icon="mdi:car-front",
     ),
     TeslaSensorEntityDescription(
         key="trunk",
         name="Rear Trunk",
-        value_path="vehicle_state.trunk",
+        value_path="vehicle_state.rt",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         icon="mdi:car-back",
     ),
     TeslaSensorEntityDescription(
@@ -292,7 +307,6 @@ SENSOR_DESCRIPTIONS = [
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_fl",
-        conversion="psi_to_bar",
         icon="mdi:car-tire-alert",
     ),
     TeslaSensorEntityDescription(
@@ -302,7 +316,6 @@ SENSOR_DESCRIPTIONS = [
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_fr",
-        conversion="psi_to_bar",
         icon="mdi:car-tire-alert",
     ),
     TeslaSensorEntityDescription(
@@ -312,7 +325,6 @@ SENSOR_DESCRIPTIONS = [
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_rl",
-        conversion="psi_to_bar",
         icon="mdi:car-tire-alert",
     ),
     TeslaSensorEntityDescription(
@@ -322,7 +334,6 @@ SENSOR_DESCRIPTIONS = [
         state_class=SensorStateClass.MEASUREMENT,
         native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_rr",
-        conversion="psi_to_bar",
         icon="mdi:car-tire-alert",
     ),
 ]
@@ -379,7 +390,22 @@ class TeslaSensorEntity(TeslaVehicleCommandEntity, SensorEntity):
                     return None
 
         if value is None:
+            if self.entity_description.key == "shift_state":
+                return "Parking"
             return None
+
+        if self.entity_description.value_map and value in self.entity_description.value_map:
+            return self.entity_description.value_map[value]
+
+        if self.entity_description.key in {
+            "fd_window",
+            "fp_window",
+            "rd_window",
+            "rp_window",
+            "ft",
+            "trunk",
+        }:
+            return "Closed" if value == 0 else "Open"
 
         # Apply conversions
         conversion = self.entity_description.conversion
@@ -402,6 +428,7 @@ class TeslaSensorEntity(TeslaVehicleCommandEntity, SensorEntity):
                 if self.entity_description.options == ["Locked", "Unlocked"]:
                     return "Locked" if value else "Unlocked"
                 return "On" if value else "Off"
-            return str(value).capitalize()
+            shift_states = {"D": "Driving", "N": "Neutral", "R": "Reverse", "P": "Parking"}
+            return shift_states.get(str(value), str(value).capitalize())
 
         return value
