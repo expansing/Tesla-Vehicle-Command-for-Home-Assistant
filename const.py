@@ -76,9 +76,6 @@ COMMANDS = {
     "set_temps": "set_temps",
     "set_charge_limit": "set_charge_limit",
     "wake_up": "wake_up",
-    # Battery preconditioning (for Supercharging)
-    "preconditioning_start": "preconditioning_start",
-    "preconditioning_stop": "preconditioning_stop",
 }
 
 # Command bodies
@@ -89,8 +86,6 @@ COMMAND_BODIES = {
     "sentry_off": {"on": False},
     "window_vent": {"command": "vent", "lat": 0, "lon": 0},
     "window_close": {"command": "close", "lat": 0, "lon": 0},
-    "preconditioning_start": {},
-    "preconditioning_stop": {},
 }
 
 # Temperature limits (Celsius)
