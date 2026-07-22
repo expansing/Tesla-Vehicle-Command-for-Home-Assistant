@@ -20,6 +20,7 @@ PLATFORMS: list[Platform] = [
 # Configuration keys
 CONF_CLIENT_ID = "client_id"
 CONF_CLIENT_SECRET = "client_secret"
+CONF_FLEET_API_BASE_URL = "fleet_api_base_url"
 CONF_VEHICLES = "vehicles"
 CONF_VIN = "vin"
 CONF_NAME = "name"
@@ -35,6 +36,10 @@ OAUTH2_SCOPES = [
     "vehicle_cmds",
     "vehicle_charging_cmds",
 ]
+
+# Fleet API regions
+FLEET_API_BASE_URL_NA = "https://fleet-api.prd.na.vn.cloud.tesla.com"
+FLEET_API_BASE_URL_EU = "https://fleet-api.prd.eu.vn.cloud.tesla.com"
 
 # Proxy settings
 PROXY_PORT = 4443
