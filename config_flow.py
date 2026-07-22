@@ -24,6 +24,7 @@ from .const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
     CONF_FLEET_API_BASE_URL,
+    CONF_UPDATE_INTERVAL,
     CONF_VEHICLES,
     CONF_VIN,
     CONF_NAME,
@@ -31,6 +32,9 @@ from .const import (
     DOMAIN,
     FLEET_API_BASE_URL_EU,
     FLEET_API_BASE_URL_NA,
+    DEFAULT_UPDATE_INTERVAL,
+    MAX_UPDATE_INTERVAL,
+    MIN_UPDATE_INTERVAL,
     OAUTH2_AUTHORIZE,
     OAUTH2_SCOPES,
     OAUTH2_TOKEN,
@@ -74,6 +78,13 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     """Handle a config flow for Tesla Vehicle Command."""
 
     VERSION = 1
+
+    @staticmethod
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> TeslaVehicleCommandOptionsFlow:
+        """Return the options flow for this integration."""
+        return TeslaVehicleCommandOptionsFlow()
 
     def __init__(self) -> None:
         """Initialize the config flow."""
@@ -414,3 +425,35 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._refresh_token = tokens["refresh_token"]
 
         _LOGGER.debug("Obtained access and refresh tokens")
+
+
+class TeslaVehicleCommandOptionsFlow(config_entries.OptionsFlow):
+    """Handle Tesla Vehicle Command integration options."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage the polling interval."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        current_interval = self.config_entry.options.get(
+            CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+        )
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_UPDATE_INTERVAL, default=current_interval
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=MIN_UPDATE_INTERVAL,
+                        max=MAX_UPDATE_INTERVAL,
+                        step=30,
+                        unit_of_measurement="seconds",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                )
+            }
+        )
+
+        return self.async_show_form(step_id="init", data_schema=schema)
