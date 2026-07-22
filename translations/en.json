@@ -38,7 +38,21 @@
       "missing_code_or_state": "Missing authorization code or state",
       "invalid_state": "Invalid OAuth state",
       "token_exchange_failed": "Token exchange failed",
-      "authorize_rejected": "Tesla authorization was rejected"
+      "authorize_rejected": "Tesla authorization was rejected",
+      "partner_account_not_registered": "This Tesla Developer App is not registered for Fleet API access in your vehicle's region. Register the partner account with Tesla, including a public key hosted at your app's allowed-origin domain, then start setup again."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tesla Vehicle Command options",
+        "data": {
+          "update_interval": "Vehicle update interval"
+        },
+        "data_description": {
+          "update_interval": "Seconds between vehicle-data requests. Short intervals can keep the vehicle awake and increase Fleet API traffic."
+        }
+      }
     }
   },
   "entity": {
