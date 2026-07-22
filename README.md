@@ -56,6 +56,7 @@ The local command proxy has no published host port. Do not add it to Cloudflare 
    vehicle_device_data
    vehicle_cmds
    vehicle_charging_cmds
+  vehicle_location
    ```
 
 5. Save the **Client ID** and **Client Secret**. They are entered into Home Assistant later.
