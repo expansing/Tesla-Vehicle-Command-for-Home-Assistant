@@ -91,6 +91,7 @@ class ProxyManager:
         )
         session = async_get_clientsession(self.hass)
         deadline = asyncio.get_running_loop().time() + timeout
+        last_error: Exception | None = None
 
         while asyncio.get_running_loop().time() < deadline:
             try:
@@ -107,15 +108,19 @@ class ProxyManager:
                         response.status,
                     )
                     return
-            except (aiohttp.ClientError, asyncio.TimeoutError):
+            except (aiohttp.ClientError, asyncio.TimeoutError) as err:
+                last_error = err
                 pass
 
             await asyncio.sleep(1)
 
-        raise RuntimeError(
+        message = (
             "Tesla Vehicle Command proxy add-on is not reachable. "
             "Install and start the local tesla_vehicle_command_proxy add-on."
         )
+        if last_error:
+            message = f"{message} Last connection error: {last_error}"
+        raise RuntimeError(message) from last_error
 
     @staticmethod
     def _create_ssl_context(ca_path: Path) -> ssl.SSLContext:
