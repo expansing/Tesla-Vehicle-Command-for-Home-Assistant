@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 from urllib.parse import urlencode
 
@@ -20,17 +21,25 @@ from homeassistant.helpers.config_entry_oauth2_flow import (
 from .const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
+    CONF_FLEET_API_BASE_URL,
     CONF_VEHICLES,
     CONF_VIN,
     CONF_NAME,
     CONF_PRIVATE_KEY_PATH,
     DOMAIN,
+    FLEET_API_BASE_URL_EU,
+    FLEET_API_BASE_URL_NA,
     OAUTH2_AUTHORIZE,
     OAUTH2_SCOPES,
     OAUTH2_TOKEN,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class PartnerAccountNotRegisteredError(Exception):
+    """Raised when Tesla requires Fleet API partner-account registration."""
+
 
 # Step 1: User provides OAuth credentials
 STEP_USER_DATA_SCHEMA = vol.Schema(
@@ -71,6 +80,7 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._redirect_uri: str | None = None
         self._access_token: str | None = None
         self._refresh_token: str | None = None
+        self._fleet_api_base_url = FLEET_API_BASE_URL_NA
         self._vehicles: list[dict[str, Any]] = []
         self._selected_vehicles: list[str] = []
         self._auth_url: str | None = None
@@ -157,6 +167,8 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not self._vehicles:
             try:
                 self._vehicles = await self._fetch_vehicles()
+            except PartnerAccountNotRegisteredError:
+                return self.async_abort(reason="partner_account_not_registered")
             except Exception as err:
                 _LOGGER.error("Failed to fetch vehicles: %s", err)
                 errors["base"] = "fetch_vehicles_failed"
@@ -204,12 +216,30 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         headers = {"Authorization": f"Bearer {self._access_token}"}
 
         async with session.get(
-            "https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/vehicles",
+            f"{self._fleet_api_base_url}/api/1/vehicles",
             headers=headers,
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             if resp.status != 200:
                 text = await resp.text()
+                if resp.status == 421:
+                    region_match = re.search(
+                        r"use base URL: (https://fleet-api\.prd\.(?:na|eu)\.vn\.cloud\.tesla\.com)",
+                        text,
+                    )
+                    if region_match:
+                        regional_base_url = region_match.group(1)
+                        if (
+                            regional_base_url in (
+                                FLEET_API_BASE_URL_NA,
+                                FLEET_API_BASE_URL_EU,
+                            )
+                            and regional_base_url != self._fleet_api_base_url
+                        ):
+                            self._fleet_api_base_url = regional_base_url
+                            return await self._fetch_vehicles()
+                if resp.status == 412 and "must be registered" in text:
+                    raise PartnerAccountNotRegisteredError from None
                 raise RuntimeError(f"Failed to fetch vehicles: {resp.status} - {text}")
 
             data = await resp.json()
@@ -337,6 +367,7 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data = {
             CONF_CLIENT_ID: self._client_id,
             CONF_CLIENT_SECRET: self._client_secret,
+            CONF_FLEET_API_BASE_URL: self._fleet_api_base_url,
             CONF_VEHICLES: vehicles_data,
             "tokens": {
                 "access_token": self._access_token,
