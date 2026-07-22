@@ -20,6 +20,7 @@ from homeassistant.const import (
     UnitOfElectricCurrent,
     UnitOfPower,
     UnitOfEnergy,
+    UnitOfPressure,
     UnitOfSpeed,
 )
 from homeassistant.core import HomeAssistant
@@ -36,7 +37,7 @@ class TeslaSensorEntityDescription(SensorEntityDescription):
 
     value_path: str | None = None
     unit_path: str | None = None
-    conversion: str | None = None  # "c_to_f", "m_to_mi", "kph_to_mph", "wh_to_kwh"
+    conversion: str | None = None
 
 
 SENSOR_DESCRIPTIONS = [
@@ -55,9 +56,9 @@ SENSOR_DESCRIPTIONS = [
         name="Battery Range",
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfLength.MILES,
+        native_unit_of_measurement=UnitOfLength.KILOMETERS,
         value_path="charge_state.est_battery_range",
-        conversion="m_to_mi",
+        conversion="mi_to_km",
         icon="mdi:road",
     ),
     TeslaSensorEntityDescription(
@@ -65,9 +66,9 @@ SENSOR_DESCRIPTIONS = [
         name="Ideal Battery Range",
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfLength.MILES,
+        native_unit_of_measurement=UnitOfLength.KILOMETERS,
         value_path="charge_state.ideal_battery_range",
-        conversion="m_to_mi",
+        conversion="mi_to_km",
         icon="mdi:road-variant",
     ),
     TeslaSensorEntityDescription(
@@ -184,9 +185,9 @@ SENSOR_DESCRIPTIONS = [
         name="Odometer",
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfLength.MILES,
+        native_unit_of_measurement=UnitOfLength.KILOMETERS,
         value_path="drive_state.odometer",
-        conversion="m_to_mi",
+        conversion="mi_to_km",
         icon="mdi:counter",
     ),
     TeslaSensorEntityDescription(
@@ -194,15 +195,14 @@ SENSOR_DESCRIPTIONS = [
         name="Speed",
         device_class=SensorDeviceClass.SPEED,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfSpeed.MILES_PER_HOUR,
+        native_unit_of_measurement=UnitOfSpeed.KILOMETERS_PER_HOUR,
         value_path="drive_state.speed",
-        conversion="kph_to_mph",
+        conversion="mph_to_kph",
         icon="mdi:speedometer",
     ),
     TeslaSensorEntityDescription(
         key="latitude",
         name="Latitude",
-        device_class=SensorDeviceClass.ENUM,  # Not really enum but no GPS device class
         value_path="drive_state.latitude",
         icon="mdi:map-marker",
     ),
@@ -290,8 +290,9 @@ SENSOR_DESCRIPTIONS = [
         name="Front Left Tire Pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement="PSI",
+        native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_fl",
+        conversion="psi_to_bar",
         icon="mdi:car-tire-alert",
     ),
     TeslaSensorEntityDescription(
@@ -299,8 +300,9 @@ SENSOR_DESCRIPTIONS = [
         name="Front Right Tire Pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement="PSI",
+        native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_fr",
+        conversion="psi_to_bar",
         icon="mdi:car-tire-alert",
     ),
     TeslaSensorEntityDescription(
@@ -308,8 +310,9 @@ SENSOR_DESCRIPTIONS = [
         name="Rear Left Tire Pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement="PSI",
+        native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_rl",
+        conversion="psi_to_bar",
         icon="mdi:car-tire-alert",
     ),
     TeslaSensorEntityDescription(
@@ -317,8 +320,9 @@ SENSOR_DESCRIPTIONS = [
         name="Rear Right Tire Pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement="PSI",
+        native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_rr",
+        conversion="psi_to_bar",
         icon="mdi:car-tire-alert",
     ),
 ]
@@ -381,18 +385,22 @@ class TeslaSensorEntity(TeslaVehicleCommandEntity, SensorEntity):
         conversion = self.entity_description.conversion
         if conversion == "c_to_f" and isinstance(value, (int, float)):
             return round(value * 9 / 5 + 32, 1)
-        elif conversion == "m_to_mi" and isinstance(value, (int, float)):
-            return round(value * 0.000621371, 1)
-        elif conversion == "kph_to_mph" and isinstance(value, (int, float)):
-            return round(value * 0.621371, 1)
+        elif conversion == "mi_to_km" and isinstance(value, (int, float)):
+            return round(value * 1.609344, 1)
+        elif conversion == "mph_to_kph" and isinstance(value, (int, float)):
+            return round(value * 1.609344, 1)
         elif conversion == "w_to_kw" and isinstance(value, (int, float)):
             return round(value / 1000, 2)
         elif conversion == "wh_to_kwh" and isinstance(value, (int, float)):
             return round(value / 1000, 2)
+        elif conversion == "psi_to_bar" and isinstance(value, (int, float)):
+            return round(value * 0.0689476, 2)
 
         # Handle boolean to enum
         if self.entity_description.device_class == SensorDeviceClass.ENUM:
             if isinstance(value, bool):
+                if self.entity_description.options == ["Locked", "Unlocked"]:
+                    return "Locked" if value else "Unlocked"
                 return "On" if value else "Off"
             return str(value).capitalize()
 
