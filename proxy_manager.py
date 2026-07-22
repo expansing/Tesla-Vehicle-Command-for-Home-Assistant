@@ -95,7 +95,7 @@ class ProxyManager:
         while asyncio.get_running_loop().time() < deadline:
             try:
                 async with session.get(
-                    f"https://{PROXY_HOST}:{PROXY_PORT}/",
+                    f"https://{PROXY_HOST}:{PROXY_PORT}/health",
                     ssl=ssl_context,
                     timeout=aiohttp.ClientTimeout(total=2),
                 ) as response:
@@ -107,7 +107,7 @@ class ProxyManager:
                         response.status,
                     )
                     return
-            except aiohttp.ClientError:
+            except (aiohttp.ClientError, asyncio.TimeoutError):
                 pass
 
             await asyncio.sleep(1)
