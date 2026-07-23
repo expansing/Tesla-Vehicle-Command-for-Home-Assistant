@@ -21,8 +21,10 @@ from .const import (
     COMMANDS,
     CONF_FLEET_API_BASE_URL,
     CONF_TELEMETRY_HOSTNAME,
+    CONF_TELEMETRY_POLLING_REDUCTION,
     CONF_TELEMETRY_PORT,
     CONF_UPDATE_INTERVAL,
+    DEFAULT_TELEMETRY_POLLING_REDUCTION,
     DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     PROXY_HOST,
@@ -73,6 +75,10 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._update_interval = int(
             entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
         )
+        self._telemetry_polling_reduction = entry.options.get(
+            CONF_TELEMETRY_POLLING_REDUCTION, DEFAULT_TELEMETRY_POLLING_REDUCTION
+        )
+        self._telemetry_active: dict[str, bool] = {}
 
         super().__init__(
             hass,
@@ -91,6 +97,21 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return current access token."""
         return self._access_token
 
+    def is_telemetry_active(self, vin: str) -> bool:
+        """Check if telemetry is actively providing data for a vehicle."""
+        return self._telemetry_active.get(vin, False)
+
+    def set_telemetry_active(self, vin: str, active: bool) -> None:
+        """Set telemetry active status for a vehicle."""
+        self._telemetry_active[vin] = active
+
+    def get_effective_update_interval(self, vin: str) -> int:
+        """Get effective update interval considering telemetry."""
+        if self._telemetry_polling_reduction and self.is_telemetry_active(vin):
+            # Reduce polling to 5 minutes when telemetry is active
+            return max(300, self._update_interval)
+        return self._update_interval
+
     async def _async_update_data(self) -> dict[str, Any]:
         """Fetch data from all vehicles."""
         if not self.proxy_manager.is_running:
@@ -103,6 +124,14 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         for vehicle in self._vehicles:
             vin = vehicle["vin"]
             try:
+                # Check if we should skip polling due to active telemetry
+                if self._telemetry_polling_reduction and self.is_telemetry_active(vin):
+                    _LOGGER.debug("Skipping Fleet API poll for %s - telemetry active", vin)
+                    # Return cached data if available
+                    if vin in self.data:
+                        data[vin] = self.data[vin]
+                        continue
+                
                 vehicle_data = await self._fetch_vehicle_data(vin)
                 data[vin] = vehicle_data
             except Exception as err:

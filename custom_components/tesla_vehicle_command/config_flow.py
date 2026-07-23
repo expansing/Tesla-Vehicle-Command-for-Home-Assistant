@@ -26,6 +26,7 @@ from .const import (
     CONF_FLEET_API_BASE_URL,
     CONF_TELEMETRY_HOSTNAME,
     CONF_TELEMETRY_PORT,
+    CONF_TELEMETRY_POLLING_REDUCTION,
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLES,
     CONF_VIN,
@@ -35,6 +36,7 @@ from .const import (
     FLEET_API_BASE_URL_EU,
     FLEET_API_BASE_URL_NA,
     DEFAULT_TELEMETRY_PORT,
+    DEFAULT_TELEMETRY_POLLING_REDUCTION,
     DEFAULT_UPDATE_INTERVAL,
     MAX_TELEMETRY_PORT,
     MAX_UPDATE_INTERVAL,
@@ -451,6 +453,9 @@ class TeslaVehicleCommandOptionsFlow(config_entries.OptionsFlow):
         telemetry_port = self.config_entry.options.get(
             CONF_TELEMETRY_PORT, DEFAULT_TELEMETRY_PORT
         )
+        telemetry_polling_reduction = self.config_entry.options.get(
+            CONF_TELEMETRY_POLLING_REDUCTION, DEFAULT_TELEMETRY_POLLING_REDUCTION
+        )
         schema = vol.Schema(
             {
                 vol.Required(
@@ -477,6 +482,9 @@ class TeslaVehicleCommandOptionsFlow(config_entries.OptionsFlow):
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
+                vol.Optional(
+                    CONF_TELEMETRY_POLLING_REDUCTION, default=telemetry_polling_reduction
+                ): selector.BooleanSelector(),
             }
         )
 
