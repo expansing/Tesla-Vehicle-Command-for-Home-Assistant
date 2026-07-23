@@ -129,6 +129,9 @@ class TelemetryConsumer:
         current_data = self.coordinator.data.get(vin, {})
         response = current_data.get("response", {})
 
+        # Mark telemetry as active for this vehicle
+        self.coordinator.set_telemetry_active(vin, True)
+
         # Update based on topic
         if topic == "V":
             # Vehicle telemetry data - contains the actual signal values
