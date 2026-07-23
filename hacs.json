@@ -1,7 +1,7 @@
 {
   "name": "Tesla Vehicle Command",
   "description": "Control your Tesla using the new end-to-end command authentication protocol. Supports Model 3/Y (all years) and 2021+ Model S/X.",
-  "version": "0.2.8",
+  "version": "0.2.9",
   "author": "expansing",
   "category": "integration",
   "homepage": "https://github.com/expansing/tesla_vehicle_command",
@@ -20,6 +20,6 @@
   "manifest": {
     "domain": "tesla_vehicle_command",
     "name": "Tesla Vehicle Command",
-    "version": "0.2.8"
+    "version": "0.2.9"
   }
 }
