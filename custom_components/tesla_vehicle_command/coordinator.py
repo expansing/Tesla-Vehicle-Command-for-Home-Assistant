@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import ssl
 from datetime import timedelta
 from typing import Any
 
@@ -240,18 +241,20 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
             return await resp.json()
 
-    def _get_ssl_context(self) -> aiohttp.ClientSSLContext:
+    async def _get_ssl_context(self) -> aiohttp.ClientSSLContext:
         """Get SSL context for proxy communication."""
-        import ssl
-
         ca_path = self.proxy_manager.cert_path
         if not ca_path or not ca_path.exists():
             # Fallback: disable verification (not recommended for production)
             return False
 
-        ssl_context = ssl.create_default_context()
-        ssl_context.load_verify_locations(str(ca_path))
-        return ssl_context
+        def _create_ssl_context() -> ssl.SSLContext:
+            import ssl
+            ssl_context = ssl.create_default_context()
+            ssl_context.load_verify_locations(str(ca_path))
+            return ssl_context
+
+        return await self.hass.async_add_executor_job(_create_ssl_context)
 
     async def async_send_command(
         self,
@@ -266,7 +269,7 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._ensure_valid_token()
 
         session = async_get_clientsession(self.hass)
-        ssl_context = self._get_ssl_context()
+        ssl_context = await self._get_ssl_context()
 
         cmd = COMMANDS.get(command, command)
         url = f"https://{PROXY_HOST}:{PROXY_PORT}{API_COMMAND.format(vin=vin, command=cmd)}"
@@ -301,7 +304,7 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._ensure_valid_token()
 
         session = async_get_clientsession(self.hass)
-        ssl_context = self._get_ssl_context()
+        ssl_context = await self._get_ssl_context()
 
         url = f"https://{PROXY_HOST}:{PROXY_PORT}{API_WAKE_UP.format(vin=vin)}"
         headers = {
@@ -338,7 +341,7 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         await self._ensure_valid_token()
         telemetry_ca = await self.hass.async_add_executor_job(ca_path.read_text)
         session = async_get_clientsession(self.hass)
-        ssl_context = self._get_ssl_context()
+        ssl_context = await self._get_ssl_context()
         headers = {
             "Authorization": f"Bearer {self._access_token}",
             "Content-Type": "application/json",
