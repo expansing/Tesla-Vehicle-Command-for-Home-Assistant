@@ -53,6 +53,7 @@ class TelemetryConsumer:
         self._context = zmq.asyncio.Context()
         self._socket = self._context.socket(zmq.SUB)
         self._socket.setsockopt(zmq.SUBSCRIBE, b"")
+        _LOGGER.info("Connecting to Fleet Telemetry ZMQ at %s", self.zmq_endpoint)
         self._socket.connect(self.zmq_endpoint)
 
         self._running = True
@@ -81,10 +82,12 @@ class TelemetryConsumer:
 
     async def _consume_loop(self) -> None:
         """Main loop to consume telemetry messages."""
+        _LOGGER.debug("Telemetry consume loop started")
         while self._running:
             try:
                 # Receive multipart message: [topic, payload]
                 parts = await self._socket.recv_multipart()
+                _LOGGER.debug("Received telemetry message: topic=%s, parts=%d", parts[0].decode("utf-8", errors="ignore") if parts else "none", len(parts))
                 if len(parts) >= 2:
                     topic = parts[0].decode("utf-8", errors="ignore")
                     payload = parts[1]
@@ -97,6 +100,7 @@ class TelemetryConsumer:
 
     async def _process_message(self, topic: str, payload: bytes) -> None:
         """Process a single telemetry message."""
+        _LOGGER.debug("Processing telemetry message: topic=%s, payload_size=%d", topic, len(payload))
         try:
             # The payload is JSON from the fleet-telemetry receiver
             data = json.loads(payload.decode("utf-8"))
@@ -113,6 +117,7 @@ class TelemetryConsumer:
                 _LOGGER.debug("Telemetry for unmanaged vehicle: %s", vin)
                 return
 
+            _LOGGER.debug("Processing telemetry for vehicle %s, topic: %s", vin, topic)
             # Process based on topic/type
             await self._update_coordinator_data(vin, topic, data)
 
@@ -135,16 +140,20 @@ class TelemetryConsumer:
         # Update based on topic
         if topic == "V":
             # Vehicle telemetry data - contains the actual signal values
+            _LOGGER.info("Received vehicle telemetry data for %s", vin)
             await self._process_vehicle_signals(vin, response, data)
         elif topic == "connectivity":
             # Connectivity events - vehicle online/offline
+            _LOGGER.info("Received connectivity event for %s: %s", vin, data.get("status", "unknown"))
             await self._process_connectivity(vin, response, data)
         elif topic == "alerts":
             # Alerts
-            _LOGGER.debug("Telemetry alert for %s: %s", vin, data)
+            _LOGGER.warning("Telemetry alert for %s: %s", vin, data)
         elif topic == "errors":
             # Errors
             _LOGGER.warning("Telemetry error for %s: %s", vin, data)
+        else:
+            _LOGGER.debug("Unknown telemetry topic: %s", topic)
 
         # Update coordinator data and trigger refresh
         self.coordinator.data[vin] = {"response": response}
@@ -157,6 +166,8 @@ class TelemetryConsumer:
         # The telemetry data contains signal values
         # Format: {"vin": "...", "timestamp": ..., "signals": {...}}
         signals = data.get("signals", {})
+        
+        _LOGGER.info("Processing %d signals for vehicle %s: %s", len(signals), vin, list(signals.keys()))
         
         # Ensure all state containers exist
         response.setdefault("charge_state", {})
@@ -202,6 +213,7 @@ class TelemetryConsumer:
                 # Convert value if needed
                 converted_value = self._convert_signal_value(signal_name, value)
                 response[state_category][state_key] = converted_value
+                _LOGGER.debug("Mapped signal %s -> %s.%s = %s", signal_name, state_category, state_key, converted_value)
 
         _LOGGER.debug("Updated telemetry data for %s: %d signals", vin, len(signals))
 
