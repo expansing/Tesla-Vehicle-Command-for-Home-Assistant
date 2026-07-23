@@ -15,6 +15,7 @@ import voluptuous as vol
 from .const import DOMAIN
 from .coordinator import TeslaVehicleCommandCoordinator
 from .proxy_manager import ProxyManager
+from .telemetry_consumer import TelemetryConsumer, async_setup_telemetry_consumer
 
 PLATFORMS: list[Platform] = [
     Platform.SENSOR,
@@ -70,9 +71,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = TeslaVehicleCommandCoordinator(hass, entry, proxy_manager)
     await coordinator.async_config_entry_first_refresh()
 
+    # Initialize telemetry consumer if configured
+    telemetry_consumer: TelemetryConsumer | None = None
+    telemetry_hostname = entry.options.get("telemetry_hostname", "").strip()
+    if telemetry_hostname:
+        telemetry_consumer = await async_setup_telemetry_consumer(hass, coordinator)
+
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,
         "proxy_manager": proxy_manager,
+        "telemetry_consumer": telemetry_consumer,
     }
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -149,6 +157,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if unload_ok:
         data = hass.data[DOMAIN].pop(entry.entry_id)
         await data["proxy_manager"].async_stop()
+        if data.get("telemetry_consumer"):
+            await data["telemetry_consumer"].async_stop()
 
     return unload_ok
 

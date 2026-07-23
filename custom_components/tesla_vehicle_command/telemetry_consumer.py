@@ -1,0 +1,286 @@
+"""Telemetry consumer for Tesla Fleet Telemetry stream."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+import logging
+from typing import Any
+
+import zmq
+import zmq.asyncio
+
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.dispatcher import async_dispatcher_send
+
+from .const import DOMAIN
+from .coordinator import TeslaVehicleCommandCoordinator
+
+_LOGGER = logging.getLogger(__name__)
+
+# ZMQ endpoint for telemetry data (from run.sh)
+# The telemetry add-on is accessible via its slug on the HA internal network
+# HA converts underscores to hyphens in add-on hostnames
+TELEMETRY_ZMQ_ENDPOINT = "tcp://local-tesla-vehicle-command-telemetry:5284"
+
+# Signal for telemetry updates
+SIGNAL_TELEMETRY_UPDATE = f"{DOMAIN}_telemetry_update"
+
+
+class TelemetryConsumer:
+    """Consumes Fleet Telemetry stream from ZMQ and updates coordinator."""
+
+    def __init__(
+        self,
+        hass: HomeAssistant,
+        coordinator: TeslaVehicleCommandCoordinator,
+        zmq_endpoint: str = TELEMETRY_ZMQ_ENDPOINT,
+    ) -> None:
+        """Initialize the telemetry consumer."""
+        self.hass = hass
+        self.coordinator = coordinator
+        self.zmq_endpoint = zmq_endpoint
+        self._context: zmq.asyncio.Context | None = None
+        self._socket: zmq.asyncio.Socket | None = None
+        self._task: asyncio.Task | None = None
+        self._running = False
+
+    async def async_start(self) -> None:
+        """Start consuming telemetry data."""
+        if self._running:
+            return
+
+        self._context = zmq.asyncio.Context()
+        self._socket = self._context.socket(zmq.SUB)
+        self._socket.setsockopt(zmq.SUBSCRIBE, b"")
+        self._socket.connect(self.zmq_endpoint)
+
+        self._running = True
+        self._task = asyncio.create_task(self._consume_loop())
+        _LOGGER.info("Started Fleet Telemetry consumer on %s", self.zmq_endpoint)
+
+    async def async_stop(self) -> None:
+        """Stop consuming telemetry data."""
+        if not self._running:
+            return
+
+        self._running = False
+        if self._task:
+            self._task.cancel()
+            try:
+                await self._task
+            except asyncio.CancelledError:
+                pass
+
+        if self._socket:
+            self._socket.close()
+        if self._context:
+            self._context.term()
+
+        _LOGGER.info("Stopped Fleet Telemetry consumer")
+
+    async def _consume_loop(self) -> None:
+        """Main loop to consume telemetry messages."""
+        while self._running:
+            try:
+                # Receive multipart message: [topic, payload]
+                parts = await self._socket.recv_multipart()
+                if len(parts) >= 2:
+                    topic = parts[0].decode("utf-8", errors="ignore")
+                    payload = parts[1]
+                    await self._process_message(topic, payload)
+            except asyncio.CancelledError:
+                break
+            except Exception as err:
+                _LOGGER.error("Error in telemetry consume loop: %s", err)
+                await asyncio.sleep(1)
+
+    async def _process_message(self, topic: str, payload: bytes) -> None:
+        """Process a single telemetry message."""
+        try:
+            # The payload is JSON from the fleet-telemetry receiver
+            data = json.loads(payload.decode("utf-8"))
+            
+            # Extract VIN from the message
+            vin = data.get("vin")
+            if not vin:
+                _LOGGER.debug("Telemetry message missing VIN: %s", topic)
+                return
+
+            # Check if this vehicle is managed by us
+            vehicle_config = self.coordinator.get_vehicle_config(vin)
+            if not vehicle_config:
+                _LOGGER.debug("Telemetry for unmanaged vehicle: %s", vin)
+                return
+
+            # Process based on topic/type
+            await self._update_coordinator_data(vin, topic, data)
+
+        except json.JSONDecodeError as err:
+            _LOGGER.debug("Failed to decode telemetry payload: %s", err)
+        except Exception as err:
+            _LOGGER.error("Error processing telemetry message: %s", err)
+
+    async def _update_coordinator_data(
+        self, vin: str, topic: str, data: dict[str, Any]
+    ) -> None:
+        """Update coordinator data with telemetry."""
+        # Get current vehicle data
+        current_data = self.coordinator.data.get(vin, {})
+        response = current_data.get("response", {})
+
+        # Update based on topic
+        if topic == "V":
+            # Vehicle telemetry data - contains the actual signal values
+            await self._process_vehicle_signals(vin, response, data)
+        elif topic == "connectivity":
+            # Connectivity events - vehicle online/offline
+            await self._process_connectivity(vin, response, data)
+        elif topic == "alerts":
+            # Alerts
+            _LOGGER.debug("Telemetry alert for %s: %s", vin, data)
+        elif topic == "errors":
+            # Errors
+            _LOGGER.warning("Telemetry error for %s: %s", vin, data)
+
+        # Update coordinator data and trigger refresh
+        self.coordinator.data[vin] = {"response": response}
+        async_dispatcher_send(self.hass, SIGNAL_TELEMETRY_UPDATE, vin)
+
+    async def _process_vehicle_signals(
+        self, vin: str, response: dict[str, Any], data: dict[str, Any]
+    ) -> None:
+        """Process vehicle signal data from telemetry."""
+        # The telemetry data contains signal values
+        # Format: {"vin": "...", "timestamp": ..., "signals": {...}}
+        signals = data.get("signals", {})
+        
+        # Ensure all state containers exist
+        response.setdefault("charge_state", {})
+        response.setdefault("climate_state", {})
+        response.setdefault("vehicle_state", {})
+        response.setdefault("drive_state", {})
+
+        # Map telemetry signals to vehicle data structure
+        signal_mapping = {
+            # Battery/Charging
+            "Soc": ("charge_state", "battery_level"),
+            "BatteryLevel": ("charge_state", "battery_level"),
+            "EstBatteryRange": ("charge_state", "battery_range"),
+            "IdealBatteryRange": ("charge_state", "ideal_battery_range"),
+            "DetailedChargeState": ("charge_state", "charging_state"),
+            "ChargeLimitSoc": ("charge_state", "charge_limit_soc"),
+            "TimeToFullCharge": ("charge_state", "time_to_full_charge"),
+            "ACChargingPower": ("charge_state", "charger_power"),
+            "DCChargingPower": ("charge_state", "charger_power"),
+            "ChargePortDoorOpen": ("charge_state", "charge_port_door_open"),
+            
+            # Climate
+            "InsideTemp": ("climate_state", "inside_temp"),
+            "OutsideTemp": ("climate_state", "outside_temp"),
+            "HvacPower": ("climate_state", "is_climate_on"),
+            
+            # Vehicle State
+            "Locked": ("vehicle_state", "locked"),
+            "SentryMode": ("vehicle_state", "sentry_mode"),
+            
+            # Drive State
+            "Gear": ("drive_state", "shift_state"),
+            "VehicleSpeed": ("drive_state", "speed"),
+            "Odometer": ("vehicle_state", "odometer"),
+            
+            # Version
+            "Version": ("vehicle_state", "car_version"),
+        }
+
+        for signal_name, (state_category, state_key) in signal_mapping.items():
+            if signal_name in signals:
+                value = signals[signal_name]
+                # Convert value if needed
+                converted_value = self._convert_signal_value(signal_name, value)
+                response[state_category][state_key] = converted_value
+
+        _LOGGER.debug("Updated telemetry data for %s: %d signals", vin, len(signals))
+
+    async def _process_connectivity(
+        self, vin: str, response: dict[str, Any], data: dict[str, Any]
+    ) -> None:
+        """Process connectivity events."""
+        # Connectivity events indicate vehicle online/offline/sleeping
+        status = data.get("status", "unknown")
+        response.setdefault("vehicle_state", {})
+        response["vehicle_state"]["connectivity_status"] = status
+        
+        # If vehicle just came online, we might want to trigger a full refresh
+        if status == "online":
+            _LOGGER.info("Vehicle %s came online via telemetry", vin)
+
+    def _convert_signal_value(self, signal_name: str, value: Any) -> Any:
+        """Convert telemetry signal value to HA-friendly format."""
+        # Temperature conversions (from tenths of Celsius to Celsius)
+        if signal_name in ("InsideTemp", "OutsideTemp"):
+            if isinstance(value, (int, float)):
+                return round(value / 10.0, 1)
+        
+        # Power conversions (from watts to kW)
+        if signal_name in ("ACChargingPower", "DCChargingPower"):
+            if isinstance(value, (int, float)):
+                return round(value / 1000.0, 2)
+        
+        # Speed conversion (from m/s to km/h)
+        if signal_name == "VehicleSpeed":
+            if isinstance(value, (int, float)):
+                return round(value * 3.6, 1)
+        
+        # Odometer conversion (from meters to km)
+        if signal_name == "Odometer":
+            if isinstance(value, (int, float)):
+                return round(value / 1000.0, 1)
+        
+        # Range conversions (from meters to km)
+        if signal_name in ("EstBatteryRange", "IdealBatteryRange"):
+            if isinstance(value, (int, float)):
+                return round(value / 1000.0, 1)
+        
+        # Battery percentage (from 0-1000 to 0-100)
+        if signal_name in ("Soc", "BatteryLevel", "ChargeLimitSoc"):
+            if isinstance(value, (int, float)):
+                return round(value / 10.0, 1)
+        
+        # Boolean conversions
+        if signal_name in ("Locked", "SentryMode", "ChargePortDoorOpen", "HvacPower"):
+            if isinstance(value, (int, float)):
+                return bool(value)
+        
+        # Gear/shift state mapping
+        if signal_name == "Gear":
+            gear_map = {
+                "D": "Driving",
+                "N": "Neutral",
+                "R": "Reverse",
+                "P": "Parking",
+            }
+            return gear_map.get(str(value), str(value))
+        
+        # Charging state mapping
+        if signal_name == "DetailedChargeState":
+            charge_map = {
+                "Charging": "Charging",
+                "Complete": "Complete",
+                "Disconnected": "Disconnected",
+                "Stopped": "Stopped",
+                "NoPower": "NoPower",
+            }
+            return charge_map.get(str(value), str(value))
+        
+        return value
+
+
+async def async_setup_telemetry_consumer(
+    hass: HomeAssistant,
+    coordinator: TeslaVehicleCommandCoordinator,
+) -> TelemetryConsumer:
+    """Set up and start the telemetry consumer."""
+    consumer = TelemetryConsumer(hass, coordinator)
+    await consumer.async_start()
+    return consumer
