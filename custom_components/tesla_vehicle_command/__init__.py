@@ -49,6 +49,10 @@ SERVICE_SEND_NAVIGATION_SCHEMA = vol.Schema({
     vol.Optional("name"): cv.string,
 })
 
+SERVICE_CONFIGURE_FLEET_TELEMETRY_SCHEMA = vol.Schema({
+    vol.Required("vin"): cv.string,
+})
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Set up Tesla Vehicle Command from a config entry."""
@@ -113,6 +117,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         })
         await coordinator.async_request_refresh()
 
+    async def handle_configure_fleet_telemetry(call: ServiceCall) -> None:
+        """Register the configured Fleet Telemetry destination for a vehicle."""
+        await coordinator.async_configure_fleet_telemetry(call.data["vin"])
+
     hass.services.async_register(
         DOMAIN, "set_valet_mode", handle_set_valet_mode, schema=SERVICE_SET_VALET_MODE_SCHEMA
     )
@@ -121,6 +129,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     )
     hass.services.async_register(
         DOMAIN, "send_navigation", handle_send_navigation, schema=SERVICE_SEND_NAVIGATION_SCHEMA
+    )
+    hass.services.async_register(
+        DOMAIN,
+        "configure_fleet_telemetry",
+        handle_configure_fleet_telemetry,
+        schema=SERVICE_CONFIGURE_FLEET_TELEMETRY_SCHEMA,
     )
 
     entry.async_on_unload(entry.add_update_listener(async_update_options))

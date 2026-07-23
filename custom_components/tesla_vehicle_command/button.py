@@ -28,6 +28,11 @@ BUTTON_DESCRIPTIONS = [
         icon="mdi:car-light-high",
     ),
     ButtonEntityDescription(
+        key="fart",
+        name="Fart",
+        icon="mdi:emoticon-poop",
+    ),
+    ButtonEntityDescription(
         key="open_charge_port",
         name="Open Charge Port",
         icon="mdi:ev-plug-ccs2",
@@ -67,16 +72,6 @@ BUTTON_DESCRIPTIONS = [
         name="Stop Battery Preconditioning",
         icon="mdi:battery-off",
     ),
-    ButtonEntityDescription(
-        key="enable_valet_mode",
-        name="Enable Valet Mode",
-        icon="mdi:shield-key",
-    ),
-    ButtonEntityDescription(
-        key="disable_valet_mode",
-        name="Disable Valet Mode",
-        icon="mdi:shield-off",
-    ),
 ]
 
 
@@ -113,6 +108,13 @@ class TeslaButtonEntity(TeslaVehicleCommandEntity, ButtonEntity):
         self._attr_unique_id = f"{vin}_{description.key}"
         self._attr_name = f"{vehicle_name} {description.name}"
 
+    @property
+    def available(self) -> bool:
+        """Return whether this command can be sent."""
+        if self.entity_description.key == "wake_up":
+            return self.coordinator.proxy_manager.is_running
+        return super().available
+
     async def async_press(self) -> None:
         """Handle button press."""
         key = self.entity_description.key
@@ -122,16 +124,15 @@ class TeslaButtonEntity(TeslaVehicleCommandEntity, ButtonEntity):
             "wake_up": ("wake_up", {}),
             "honk_horn": ("honk", {}),
             "flash_lights": ("flash", {}),
+            "fart": ("fart", {}),
             "open_charge_port": ("charge_port_open", {}),
             "close_charge_port": ("charge_port_close", {}),
             "open_trunk": ("trunk_rear", {}),
             "open_frunk": ("trunk_front", {}),
             "vent_windows": ("window_vent", {}),
             "close_windows": ("window_close", {}),
-            "preconditioning_start": ("preconditioning_start", {}),
-            "preconditioning_stop": ("preconditioning_stop", {}),
-            "enable_valet_mode": ("valet_mode_on", {"pin": "0000"}),  # Would need PIN input
-            "disable_valet_mode": ("valet_mode_off", {}),
+            "preconditioning_start": ("climate_on", {}),
+            "preconditioning_stop": ("climate_off", {}),
         }
 
         if key not in command_map:

@@ -37,7 +37,26 @@
     "abort": {
       "missing_code_or_state": "Missing authorization code or state",
       "invalid_state": "Invalid OAuth state",
-      "token_exchange_failed": "Token exchange failed"
+      "token_exchange_failed": "Token exchange failed",
+      "authorize_rejected": "Tesla authorization was rejected",
+      "partner_account_not_registered": "This Tesla Developer App is not registered for Fleet API access in your vehicle's region. Register the partner account with Tesla, including a public key hosted at your app's allowed-origin domain, then start setup again."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Tesla Vehicle Command options",
+        "data": {
+          "update_interval": "Vehicle update interval",
+          "telemetry_hostname": "Fleet Telemetry hostname",
+          "telemetry_port": "Fleet Telemetry port"
+        },
+        "data_description": {
+          "update_interval": "Seconds between fallback vehicle-data requests. Short intervals can keep the vehicle awake and increase Fleet API traffic.",
+          "telemetry_hostname": "Public DNS hostname for the Tesla Fleet Telemetry receiver. Leave blank until the telemetry add-on and public network route are ready.",
+          "telemetry_port": "Public TCP port for the Fleet Telemetry receiver."
+        }
+      }
     }
   },
   "entity": {
@@ -69,7 +88,7 @@
       "fp_window": { "name": "Front Passenger Window" },
       "rd_window": { "name": "Rear Driver Window" },
       "rp_window": { "name": "Rear Passenger Window" },
-      "ft": { "name": "Front Trunk" },
+      "ft": { "name": "Frunk" },
       "trunk": { "name": "Rear Trunk" },
       "car_version": { "name": "Software Version" },
       "tpms_fl": { "name": "Front Left Tire Pressure" },
@@ -111,6 +130,7 @@
       "wake_up": { "name": "Wake Up" },
       "honk_horn": { "name": "Honk Horn" },
       "flash_lights": { "name": "Flash Lights" },
+      "fart": { "name": "Fart" },
       "open_charge_port": { "name": "Open Charge Port" },
       "close_charge_port": { "name": "Close Charge Port" },
       "open_trunk": { "name": "Open Trunk" },

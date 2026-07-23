@@ -20,6 +20,7 @@ from homeassistant.const import (
     UnitOfElectricCurrent,
     UnitOfPower,
     UnitOfEnergy,
+    UnitOfPressure,
     UnitOfSpeed,
 )
 from homeassistant.core import HomeAssistant
@@ -36,7 +37,8 @@ class TeslaSensorEntityDescription(SensorEntityDescription):
 
     value_path: str | None = None
     unit_path: str | None = None
-    conversion: str | None = None  # "c_to_f", "m_to_mi", "kph_to_mph", "wh_to_kwh"
+    conversion: str | None = None
+    value_map: dict[Any, str] | None = None
 
 
 SENSOR_DESCRIPTIONS = [
@@ -55,9 +57,9 @@ SENSOR_DESCRIPTIONS = [
         name="Battery Range",
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfLength.MILES,
-        value_path="charge_state.est_battery_range",
-        conversion="m_to_mi",
+        native_unit_of_measurement=UnitOfLength.KILOMETERS,
+        value_path="charge_state.battery_range",
+        conversion="mi_to_km",
         icon="mdi:road",
     ),
     TeslaSensorEntityDescription(
@@ -65,9 +67,9 @@ SENSOR_DESCRIPTIONS = [
         name="Ideal Battery Range",
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfLength.MILES,
+        native_unit_of_measurement=UnitOfLength.KILOMETERS,
         value_path="charge_state.ideal_battery_range",
-        conversion="m_to_mi",
+        conversion="mi_to_km",
         icon="mdi:road-variant",
     ),
     TeslaSensorEntityDescription(
@@ -184,9 +186,9 @@ SENSOR_DESCRIPTIONS = [
         name="Odometer",
         device_class=SensorDeviceClass.DISTANCE,
         state_class=SensorStateClass.TOTAL_INCREASING,
-        native_unit_of_measurement=UnitOfLength.MILES,
-        value_path="drive_state.odometer",
-        conversion="m_to_mi",
+        native_unit_of_measurement=UnitOfLength.KILOMETERS,
+        value_path="vehicle_state.odometer",
+        conversion="mi_to_km",
         icon="mdi:counter",
     ),
     TeslaSensorEntityDescription(
@@ -194,15 +196,14 @@ SENSOR_DESCRIPTIONS = [
         name="Speed",
         device_class=SensorDeviceClass.SPEED,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement=UnitOfSpeed.MILES_PER_HOUR,
+        native_unit_of_measurement=UnitOfSpeed.KILOMETERS_PER_HOUR,
         value_path="drive_state.speed",
-        conversion="kph_to_mph",
+        conversion="mph_to_kph",
         icon="mdi:speedometer",
     ),
     TeslaSensorEntityDescription(
         key="latitude",
         name="Latitude",
-        device_class=SensorDeviceClass.ENUM,  # Not really enum but no GPS device class
         value_path="drive_state.latitude",
         icon="mdi:map-marker",
     ),
@@ -222,6 +223,8 @@ SENSOR_DESCRIPTIONS = [
     TeslaSensorEntityDescription(
         key="shift_state",
         name="Shift State",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Driving", "Neutral", "Reverse", "Parking"],
         value_path="drive_state.shift_state",
         icon="mdi:car-shift-pattern",
     ),
@@ -246,37 +249,49 @@ SENSOR_DESCRIPTIONS = [
     TeslaSensorEntityDescription(
         key="fd_window",
         name="Front Driver Window",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         value_path="vehicle_state.fd_window",
         icon="mdi:car-door",
     ),
     TeslaSensorEntityDescription(
         key="fp_window",
         name="Front Passenger Window",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         value_path="vehicle_state.fp_window",
         icon="mdi:car-door",
     ),
     TeslaSensorEntityDescription(
         key="rd_window",
         name="Rear Driver Window",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         value_path="vehicle_state.rd_window",
         icon="mdi:car-door",
     ),
     TeslaSensorEntityDescription(
         key="rp_window",
         name="Rear Passenger Window",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         value_path="vehicle_state.rp_window",
         icon="mdi:car-door",
     ),
     TeslaSensorEntityDescription(
         key="ft",
-        name="Front Trunk",
+        name="Frunk",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         value_path="vehicle_state.ft",
         icon="mdi:car-front",
     ),
     TeslaSensorEntityDescription(
         key="trunk",
         name="Rear Trunk",
-        value_path="vehicle_state.trunk",
+        value_path="vehicle_state.rt",
+        device_class=SensorDeviceClass.ENUM,
+        options=["Open", "Closed"],
         icon="mdi:car-back",
     ),
     TeslaSensorEntityDescription(
@@ -290,7 +305,7 @@ SENSOR_DESCRIPTIONS = [
         name="Front Left Tire Pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement="PSI",
+        native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_fl",
         icon="mdi:car-tire-alert",
     ),
@@ -299,7 +314,7 @@ SENSOR_DESCRIPTIONS = [
         name="Front Right Tire Pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement="PSI",
+        native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_fr",
         icon="mdi:car-tire-alert",
     ),
@@ -308,7 +323,7 @@ SENSOR_DESCRIPTIONS = [
         name="Rear Left Tire Pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement="PSI",
+        native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_rl",
         icon="mdi:car-tire-alert",
     ),
@@ -317,7 +332,7 @@ SENSOR_DESCRIPTIONS = [
         name="Rear Right Tire Pressure",
         device_class=SensorDeviceClass.PRESSURE,
         state_class=SensorStateClass.MEASUREMENT,
-        native_unit_of_measurement="PSI",
+        native_unit_of_measurement=UnitOfPressure.BAR,
         value_path="vehicle_state.tpms_pressure_rr",
         icon="mdi:car-tire-alert",
     ),
@@ -375,25 +390,45 @@ class TeslaSensorEntity(TeslaVehicleCommandEntity, SensorEntity):
                     return None
 
         if value is None:
+            if self.entity_description.key == "shift_state":
+                return "Parking"
             return None
+
+        if self.entity_description.value_map and value in self.entity_description.value_map:
+            return self.entity_description.value_map[value]
+
+        if self.entity_description.key in {
+            "fd_window",
+            "fp_window",
+            "rd_window",
+            "rp_window",
+            "ft",
+            "trunk",
+        }:
+            return "Closed" if value == 0 else "Open"
 
         # Apply conversions
         conversion = self.entity_description.conversion
         if conversion == "c_to_f" and isinstance(value, (int, float)):
             return round(value * 9 / 5 + 32, 1)
-        elif conversion == "m_to_mi" and isinstance(value, (int, float)):
-            return round(value * 0.000621371, 1)
-        elif conversion == "kph_to_mph" and isinstance(value, (int, float)):
-            return round(value * 0.621371, 1)
+        elif conversion == "mi_to_km" and isinstance(value, (int, float)):
+            return round(value * 1.609344, 1)
+        elif conversion == "mph_to_kph" and isinstance(value, (int, float)):
+            return round(value * 1.609344, 1)
         elif conversion == "w_to_kw" and isinstance(value, (int, float)):
             return round(value / 1000, 2)
         elif conversion == "wh_to_kwh" and isinstance(value, (int, float)):
             return round(value / 1000, 2)
+        elif conversion == "psi_to_bar" and isinstance(value, (int, float)):
+            return round(value * 0.0689476, 2)
 
         # Handle boolean to enum
         if self.entity_description.device_class == SensorDeviceClass.ENUM:
             if isinstance(value, bool):
+                if self.entity_description.options == ["Locked", "Unlocked"]:
+                    return "Locked" if value else "Unlocked"
                 return "On" if value else "Off"
-            return str(value).capitalize()
+            shift_states = {"D": "Driving", "N": "Neutral", "R": "Reverse", "P": "Parking"}
+            return shift_states.get(str(value), str(value).capitalize())
 
         return value

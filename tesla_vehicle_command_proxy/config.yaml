@@ -1,0 +1,13 @@
+name: Tesla Vehicle Command Proxy
+version: "1.0.3"
+slug: tesla_vehicle_command_proxy
+description: Runs Tesla's official vehicle-command HTTP proxy for the integration.
+arch:
+  - aarch64
+  - amd64
+  - armv7
+  - armhf
+map:
+  - config:ro
+startup: services
+boot: auto

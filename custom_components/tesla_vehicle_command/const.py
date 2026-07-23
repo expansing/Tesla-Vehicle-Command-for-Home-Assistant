@@ -20,10 +20,14 @@ PLATFORMS: list[Platform] = [
 # Configuration keys
 CONF_CLIENT_ID = "client_id"
 CONF_CLIENT_SECRET = "client_secret"
+CONF_FLEET_API_BASE_URL = "fleet_api_base_url"
 CONF_VEHICLES = "vehicles"
 CONF_VIN = "vin"
 CONF_NAME = "name"
 CONF_PRIVATE_KEY_PATH = "private_key_path"
+CONF_TELEMETRY_HOSTNAME = "telemetry_hostname"
+CONF_TELEMETRY_PORT = "telemetry_port"
+CONF_UPDATE_INTERVAL = "update_interval"
 
 # OAuth2
 OAUTH2_AUTHORIZE = "https://auth.tesla.com/oauth2/v3/authorize"
@@ -34,11 +38,16 @@ OAUTH2_SCOPES = [
     "vehicle_device_data",
     "vehicle_cmds",
     "vehicle_charging_cmds",
+    "vehicle_location",
 ]
+
+# Fleet API regions
+FLEET_API_BASE_URL_NA = "https://fleet-api.prd.na.vn.cloud.tesla.com"
+FLEET_API_BASE_URL_EU = "https://fleet-api.prd.eu.vn.cloud.tesla.com"
 
 # Proxy settings
 PROXY_PORT = 4443
-PROXY_HOST = "127.0.0.1"
+PROXY_HOST = "local-tesla-vehicle-command-proxy"
 PROXY_TIMEOUT = 30
 
 # API endpoints (proxied through tesla-http-proxy)
@@ -46,6 +55,7 @@ API_VEHICLES = "/api/1/vehicles"
 API_VEHICLE_DATA = "/api/1/vehicles/{vin}/vehicle_data"
 API_WAKE_UP = "/api/1/vehicles/{vin}/wake_up"
 API_COMMAND = "/api/1/vehicles/{vin}/command/{command}"
+API_FLEET_TELEMETRY_CONFIG = "/api/1/vehicles/fleet_telemetry_config"
 
 # Vehicle commands
 COMMANDS = {
@@ -70,10 +80,8 @@ COMMANDS = {
     "sunroof": "sunroof_control",
     "set_temps": "set_temps",
     "set_charge_limit": "set_charge_limit",
+    "fart": "remote_boombox",
     "wake_up": "wake_up",
-    # Battery preconditioning (for Supercharging)
-    "preconditioning_start": "preconditioning_start",
-    "preconditioning_stop": "preconditioning_stop",
 }
 
 # Command bodies
@@ -84,8 +92,7 @@ COMMAND_BODIES = {
     "sentry_off": {"on": False},
     "window_vent": {"command": "vent", "lat": 0, "lon": 0},
     "window_close": {"command": "close", "lat": 0, "lon": 0},
-    "preconditioning_start": {},
-    "preconditioning_stop": {},
+    "fart": {"action": "fart"},
 }
 
 # Temperature limits (Celsius)
@@ -105,9 +112,14 @@ SEAT_HEATER_MEDIUM = 2
 SEAT_HEATER_HIGH = 3
 
 # Update intervals
-UPDATE_INTERVAL_VEHICLE_DATA = 300  # 5 minutes
-UPDATE_INTERVAL_CHARGING = 30  # 30 seconds when charging
-UPDATE_INTERVAL_AWAKE = 60  # 1 minute when awake
+DEFAULT_UPDATE_INTERVAL = 30
+MIN_UPDATE_INTERVAL = 30
+MAX_UPDATE_INTERVAL = 900
+
+# Fleet Telemetry settings
+DEFAULT_TELEMETRY_PORT = 4443
+MIN_TELEMETRY_PORT = 1
+MAX_TELEMETRY_PORT = 65535
 
 # Proxy binary names by platform
 PROXY_BINARIES = {

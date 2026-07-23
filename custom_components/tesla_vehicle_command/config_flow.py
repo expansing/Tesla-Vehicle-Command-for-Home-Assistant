@@ -3,32 +3,54 @@
 from __future__ import annotations
 
 import logging
-import secrets
+import re
 from typing import Any
 from urllib.parse import urlencode
+from pathlib import Path
 
 import aiohttp
 import voluptuous as vol
 from homeassistant import config_entries
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import selector
 from homeassistant.data_entry_flow import FlowResult
+from homeassistant.helpers import selector
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.config_entry_oauth2_flow import (
+    AUTH_CALLBACK_PATH,
+    _encode_jwt,
+)
 
 from .const import (
     CONF_CLIENT_ID,
     CONF_CLIENT_SECRET,
+    CONF_FLEET_API_BASE_URL,
+    CONF_TELEMETRY_HOSTNAME,
+    CONF_TELEMETRY_PORT,
+    CONF_UPDATE_INTERVAL,
     CONF_VEHICLES,
     CONF_VIN,
     CONF_NAME,
     CONF_PRIVATE_KEY_PATH,
     DOMAIN,
+    FLEET_API_BASE_URL_EU,
+    FLEET_API_BASE_URL_NA,
+    DEFAULT_TELEMETRY_PORT,
+    DEFAULT_UPDATE_INTERVAL,
+    MAX_TELEMETRY_PORT,
+    MAX_UPDATE_INTERVAL,
+    MIN_TELEMETRY_PORT,
+    MIN_UPDATE_INTERVAL,
     OAUTH2_AUTHORIZE,
     OAUTH2_SCOPES,
     OAUTH2_TOKEN,
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+
+class PartnerAccountNotRegisteredError(Exception):
+    """Raised when Tesla requires Fleet API partner-account registration."""
+
 
 # Step 1: User provides OAuth credentials
 STEP_USER_DATA_SCHEMA = vol.Schema(
@@ -37,9 +59,6 @@ STEP_USER_DATA_SCHEMA = vol.Schema(
         vol.Required(CONF_CLIENT_SECRET): str,
     }
 )
-
-# Step 2: OAuth authorization URL display
-STEP_AUTH_DATA_SCHEMA = vol.Schema({})
 
 # Step 3: Vehicle selection
 STEP_VEHICLE_SCHEMA = vol.Schema(
@@ -65,13 +84,21 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
     VERSION = 1
 
+    @staticmethod
+    def async_get_options_flow(
+        config_entry: config_entries.ConfigEntry,
+    ) -> TeslaVehicleCommandOptionsFlow:
+        """Return the options flow for this integration."""
+        return TeslaVehicleCommandOptionsFlow()
+
     def __init__(self) -> None:
         """Initialize the config flow."""
         self._client_id: str | None = None
         self._client_secret: str | None = None
-        self._oauth_state: str | None = None
+        self._redirect_uri: str | None = None
         self._access_token: str | None = None
         self._refresh_token: str | None = None
+        self._fleet_api_base_url = FLEET_API_BASE_URL_EU
         self._vehicles: list[dict[str, Any]] = []
         self._selected_vehicles: list[str] = []
         self._auth_url: str | None = None
@@ -106,33 +133,40 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
     async def async_step_auth(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Show the authorization URL and wait for user to complete OAuth."""
+        """Handle Tesla's OAuth callback."""
         if user_input is not None:
-            # User clicked "Continue" after authorizing
-            return await self.async_step_vehicles()
+            if "error" in user_input:
+                return self.async_abort(reason="authorize_rejected")
+            try:
+                await self._exchange_code_for_tokens(user_input["code"])
+            except Exception as err:
+                _LOGGER.error("Token exchange failed: %s", err)
+                return self.async_abort(reason="token_exchange_failed")
+            return self.async_external_step_done(next_step_id="vehicles")
 
-        return self.async_show_form(
+        return self.async_external_step(
             step_id="auth",
-            data_schema=STEP_AUTH_DATA_SCHEMA,
-            description_placeholders={
-                "auth_url": self._auth_url or "",
-                "redirect_uri": f"{self.hass.config.external_url}/auth/external/callback",
-            },
+            url=self._auth_url or "",
         )
 
     async def _generate_auth_url(self) -> str:
         """Generate Tesla OAuth authorization URL."""
-        self._oauth_state = secrets.token_urlsafe(32)
-
-        # Redirect URI must match what's configured in Tesla developer portal
-        redirect_uri = f"{self.hass.config.external_url}/auth/external/callback"
+        external_url = self.hass.config.external_url
+        if not external_url:
+            raise RuntimeError("Home Assistant external URL is not configured")
+        self._redirect_uri = f"{external_url.rstrip('/')}{AUTH_CALLBACK_PATH}"
+        _LOGGER.info("Tesla OAuth redirect URI: %s", self._redirect_uri)
+        state = _encode_jwt(
+            self.hass,
+            {"flow_id": self.flow_id, "redirect_uri": self._redirect_uri},
+        )
 
         params = {
             "client_id": self._client_id,
-            "redirect_uri": redirect_uri,
+            "redirect_uri": self._redirect_uri,
             "response_type": "code",
             "scope": " ".join(OAUTH2_SCOPES),
-            "state": self._oauth_state,
+            "state": state,
         }
 
         return f"{OAUTH2_AUTHORIZE}?{urlencode(params)}"
@@ -143,7 +177,7 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         """Select vehicles to add."""
         errors = {}
 
-        if user_input is not None:
+        if user_input and "vehicles" in user_input:
             self._selected_vehicles = user_input["vehicles"]
             return await self.async_step_key()
 
@@ -151,6 +185,8 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         if not self._vehicles:
             try:
                 self._vehicles = await self._fetch_vehicles()
+            except PartnerAccountNotRegisteredError:
+                return self.async_abort(reason="partner_account_not_registered")
             except Exception as err:
                 _LOGGER.error("Failed to fetch vehicles: %s", err)
                 errors["base"] = "fetch_vehicles_failed"
@@ -169,15 +205,23 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             )
 
         # Build vehicle selection schema
-        vehicle_options = {
-            v["vin"]: f"{v.get('display_name', v['vin'])} ({v['vin']})"
-            for v in self._vehicles
-        }
+        vehicle_options = [
+            selector.SelectOptionDict(
+                value=vehicle["vin"],
+                label=f"{vehicle.get('display_name', vehicle['vin'])} ({vehicle['vin']})",
+            )
+            for vehicle in self._vehicles
+        ]
 
         schema = vol.Schema(
             {
                 vol.Required("vehicles"): vol.All(
-                    vol.MultiSelect(vehicle_options),
+                    selector.SelectSelector(
+                        selector.SelectSelectorConfig(
+                            options=vehicle_options,
+                            multiple=True,
+                        )
+                    ),
                     vol.Length(min=1),
                 )
             }
@@ -198,12 +242,30 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         headers = {"Authorization": f"Bearer {self._access_token}"}
 
         async with session.get(
-            "https://fleet-api.prd.na.vn.cloud.tesla.com/api/1/vehicles",
+            f"{self._fleet_api_base_url}/api/1/vehicles",
             headers=headers,
             timeout=aiohttp.ClientTimeout(total=10),
         ) as resp:
             if resp.status != 200:
                 text = await resp.text()
+                if resp.status == 421:
+                    region_match = re.search(
+                        r"use base URL: (https://fleet-api\.prd\.(?:na|eu)\.vn\.cloud\.tesla\.com)",
+                        text,
+                    )
+                    if region_match:
+                        regional_base_url = region_match.group(1)
+                        if (
+                            regional_base_url in (
+                                FLEET_API_BASE_URL_NA,
+                                FLEET_API_BASE_URL_EU,
+                            )
+                            and regional_base_url != self._fleet_api_base_url
+                        ):
+                            self._fleet_api_base_url = regional_base_url
+                            return await self._fetch_vehicles()
+                if resp.status == 412 and "must be registered" in text:
+                    raise PartnerAccountNotRegisteredError from None
                 raise RuntimeError(f"Failed to fetch vehicles: {resp.status} - {text}")
 
             data = await resp.json()
@@ -266,28 +328,19 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             encryption_algorithm=serialization.NoEncryption(),
         )
 
-        # Save to config directory
         key_dir = self.hass.config.path(DOMAIN, "keys")
-        import os
-        os.makedirs(key_dir, exist_ok=True)
-
-        # Use first selected VIN for filename
         vin = self._selected_vehicles[0]
-        key_path = os.path.join(key_dir, f"{vin}.pem")
+        key_path = Path(key_dir) / f"{vin}.pem"
 
-        with open(key_path, "wb") as f:
-            f.write(pem)
-
-        # Set restrictive permissions
-        os.chmod(key_path, 0o600)
+        await self.hass.async_add_executor_job(
+            self._write_private_key, key_path, pem
+        )
 
         _LOGGER.info("Generated private key at %s", key_path)
-        return key_path
+        return str(key_path)
 
     async def _import_private_key(self, private_key_pem: str) -> str:
         """Import an existing private key."""
-        import os
-
         # Validate it's a valid PEM
         from cryptography.hazmat.primitives import serialization
 
@@ -299,20 +352,23 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         except Exception as err:
             raise ValueError(f"Invalid private key: {err}")
 
-        # Save to config directory
         key_dir = self.hass.config.path(DOMAIN, "keys")
-        os.makedirs(key_dir, exist_ok=True)
-
         vin = self._selected_vehicles[0]
-        key_path = os.path.join(key_dir, f"{vin}.pem")
+        key_path = Path(key_dir) / f"{vin}.pem"
 
-        with open(key_path, "w") as f:
-            f.write(private_key_pem)
-
-        os.chmod(key_path, 0o600)
+        await self.hass.async_add_executor_job(
+            self._write_private_key, key_path, private_key_pem.encode()
+        )
 
         _LOGGER.info("Imported private key to %s", key_path)
-        return key_path
+        return str(key_path)
+
+    @staticmethod
+    def _write_private_key(key_path: Path, pem: bytes) -> None:
+        """Write a private key without blocking Home Assistant's event loop."""
+        key_path.parent.mkdir(parents=True, exist_ok=True)
+        key_path.write_bytes(pem)
+        key_path.chmod(0o600)
 
     async def _create_entry(self, private_key_path: str) -> FlowResult:
         """Create the config entry."""
@@ -331,6 +387,7 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         data = {
             CONF_CLIENT_ID: self._client_id,
             CONF_CLIENT_SECRET: self._client_secret,
+            CONF_FLEET_API_BASE_URL: self._fleet_api_base_url,
             CONF_VEHICLES: vehicles_data,
             "tokens": {
                 "access_token": self._access_token,
@@ -344,30 +401,10 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             data=data,
         )
 
-    async def async_oauth2_callback(self, data: dict[str, Any]) -> FlowResult:
-        """Handle OAuth2 callback from Home Assistant's external auth."""
-        # This is called by HA's external auth callback handler
-        code = data.get("code")
-        state = data.get("state")
-
-        if not code or not state:
-            return self.async_abort(reason="missing_code_or_state")
-
-        if state != self._oauth_state:
-            return self.async_abort(reason="invalid_state")
-
-        # Exchange code for tokens
-        try:
-            await self._exchange_code_for_tokens(code)
-        except Exception as err:
-            _LOGGER.error("Token exchange failed: %s", err)
-            return self.async_abort(reason="token_exchange_failed")
-
-        return await self.async_step_vehicles()
-
     async def _exchange_code_for_tokens(self, code: str) -> None:
         """Exchange authorization code for access/refresh tokens."""
-        redirect_uri = f"{self.hass.config.external_url}/auth/external/callback"
+        if not self._redirect_uri:
+            raise RuntimeError("OAuth redirect URI is not initialized")
 
         session = async_get_clientsession(self.hass)
         token_data = {
@@ -375,7 +412,7 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
             "client_id": self._client_id,
             "client_secret": self._client_secret,
             "code": code,
-            "redirect_uri": redirect_uri,
+            "redirect_uri": self._redirect_uri,
         }
 
         async with session.post(
@@ -393,3 +430,54 @@ class TeslaVehicleCommandConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         self._refresh_token = tokens["refresh_token"]
 
         _LOGGER.debug("Obtained access and refresh tokens")
+
+
+class TeslaVehicleCommandOptionsFlow(config_entries.OptionsFlow):
+    """Handle Tesla Vehicle Command integration options."""
+
+    async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Manage the polling interval."""
+        if user_input is not None:
+            return self.async_create_entry(title="", data=user_input)
+
+        current_interval = self.config_entry.options.get(
+            CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
+        )
+        telemetry_hostname = self.config_entry.options.get(
+            CONF_TELEMETRY_HOSTNAME, ""
+        )
+        telemetry_port = self.config_entry.options.get(
+            CONF_TELEMETRY_PORT, DEFAULT_TELEMETRY_PORT
+        )
+        schema = vol.Schema(
+            {
+                vol.Required(
+                    CONF_UPDATE_INTERVAL, default=current_interval
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=MIN_UPDATE_INTERVAL,
+                        max=MAX_UPDATE_INTERVAL,
+                        step=30,
+                        unit_of_measurement="seconds",
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+                vol.Optional(
+                    CONF_TELEMETRY_HOSTNAME, default=telemetry_hostname
+                ): str,
+                vol.Required(
+                    CONF_TELEMETRY_PORT, default=telemetry_port
+                ): selector.NumberSelector(
+                    selector.NumberSelectorConfig(
+                        min=MIN_TELEMETRY_PORT,
+                        max=MAX_TELEMETRY_PORT,
+                        step=1,
+                        mode=selector.NumberSelectorMode.BOX,
+                    )
+                ),
+            }
+        )
+
+        return self.async_show_form(step_id="init", data_schema=schema)

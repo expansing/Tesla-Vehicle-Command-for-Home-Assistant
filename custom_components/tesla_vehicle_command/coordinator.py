@@ -15,21 +15,45 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 
 from .const import (
     API_COMMAND,
+    API_FLEET_TELEMETRY_CONFIG,
     API_VEHICLE_DATA,
-    API_VEHICLES,
     API_WAKE_UP,
     COMMAND_BODIES,
     COMMANDS,
+    CONF_FLEET_API_BASE_URL,
+    CONF_TELEMETRY_HOSTNAME,
+    CONF_TELEMETRY_PORT,
+    CONF_UPDATE_INTERVAL,
+    DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     PROXY_HOST,
     PROXY_PORT,
-    UPDATE_INTERVAL_AWAKE,
-    UPDATE_INTERVAL_CHARGING,
-    UPDATE_INTERVAL_VEHICLE_DATA,
 )
 from .proxy_manager import ProxyManager
 
 _LOGGER = logging.getLogger(__name__)
+
+_FLEET_TELEMETRY_FIELDS = {
+    "Soc": {"interval_seconds": 60},
+    "BatteryLevel": {"interval_seconds": 60},
+    "EstBatteryRange": {"interval_seconds": 60},
+    "IdealBatteryRange": {"interval_seconds": 60},
+    "DetailedChargeState": {"interval_seconds": 60},
+    "ChargeLimitSoc": {"interval_seconds": 300},
+    "TimeToFullCharge": {"interval_seconds": 60},
+    "ACChargingPower": {"interval_seconds": 60},
+    "DCChargingPower": {"interval_seconds": 60},
+    "ChargePortDoorOpen": {"interval_seconds": 60},
+    "InsideTemp": {"interval_seconds": 300},
+    "OutsideTemp": {"interval_seconds": 300},
+    "HvacPower": {"interval_seconds": 60},
+    "Locked": {"interval_seconds": 60},
+    "SentryMode": {"interval_seconds": 300},
+    "Gear": {"interval_seconds": 2},
+    "VehicleSpeed": {"interval_seconds": 2},
+    "Odometer": {"interval_seconds": 300},
+    "Version": {"interval_seconds": 3600},
+}
 
 
 class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -47,12 +71,15 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._vehicles = entry.data.get("vehicles", [])
         self._access_token: str | None = None
         self._token_expires_at: float = 0
+        self._update_interval = int(
+            entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+        )
 
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=UPDATE_INTERVAL_VEHICLE_DATA),
+            update_interval=timedelta(seconds=self._update_interval),
         )
 
     @property
@@ -135,6 +162,7 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._token_expires_at = time.time() + expires_in
 
         # Update stored tokens
+        tokens = self.entry.data.get("tokens", {})
         new_tokens = {
             **tokens,
             "access_token": token_data["access_token"],
@@ -149,20 +177,30 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         _LOGGER.debug("Refreshed access token")
 
     async def _fetch_vehicle_data(self, vin: str) -> dict[str, Any]:
-        """Fetch vehicle data from proxy."""
-        session = async_get_clientsession(self.hass)
-        ssl_context = self._get_ssl_context()
+        """Fetch read-only vehicle data from the regional Fleet API."""
+        fleet_api_base_url = self.entry.data.get(CONF_FLEET_API_BASE_URL)
+        if not fleet_api_base_url:
+            raise UpdateFailed("Fleet API base URL is not configured")
 
-        url = f"https://{PROXY_HOST}:{PROXY_PORT}{API_VEHICLE_DATA.format(vin=vin)}"
+        session = async_get_clientsession(self.hass)
+        url = f"{fleet_api_base_url}{API_VEHICLE_DATA.format(vin=vin)}"
         headers = {"Authorization": f"Bearer {self._access_token}"}
 
-        async with session.get(url, headers=headers, ssl=ssl_context, timeout=aiohttp.ClientTimeout(total=30)) as resp:
+        async with session.get(
+            url,
+            headers=headers,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as resp:
             if resp.status == 401:
                 # Token might be expired, force refresh
                 self._token_expires_at = 0
                 await self._ensure_valid_token()
                 headers["Authorization"] = f"Bearer {self._access_token}"
-                async with session.get(url, headers=headers, ssl=ssl_context, timeout=aiohttp.ClientTimeout(total=30)) as retry_resp:
+                async with session.get(
+                    url,
+                    headers=headers,
+                    timeout=aiohttp.ClientTimeout(total=30),
+                ) as retry_resp:
                     if retry_resp.status != 200:
                         text = await retry_resp.text()
                         raise UpdateFailed(f"Vehicle data fetch failed: {retry_resp.status} - {text}")
@@ -238,14 +276,68 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         ssl_context = self._get_ssl_context()
 
         url = f"https://{PROXY_HOST}:{PROXY_PORT}{API_WAKE_UP.format(vin=vin)}"
-        headers = {"Authorization": f"Bearer {self._access_token}"}
+        headers = {
+            "Authorization": f"Bearer {self._access_token}",
+            "Content-Type": "application/json",
+        }
 
-        async with session.post(url, headers=headers, ssl=ssl_context, timeout=aiohttp.ClientTimeout(total=60)) as resp:
+        async with session.post(
+            url,
+            headers=headers,
+            json={},
+            ssl=ssl_context,
+            timeout=aiohttp.ClientTimeout(total=60),
+        ) as resp:
             if resp.status != 200:
                 text = await resp.text()
                 raise RuntimeError(f"Wake up failed: {resp.status} - {text}")
 
             return await resp.json()
+
+    async def async_configure_fleet_telemetry(self, vin: str) -> dict[str, Any]:
+        """Register a Fleet Telemetry destination through the command proxy."""
+        if not self.proxy_manager.is_running:
+            raise RuntimeError("Proxy not running")
+
+        hostname = self.entry.options.get(CONF_TELEMETRY_HOSTNAME, "").strip()
+        port = self.entry.options.get(CONF_TELEMETRY_PORT)
+        ca_path = self.proxy_manager.telemetry_ca_path
+        if not hostname or not port or not ca_path or not ca_path.is_file():
+            raise RuntimeError(
+                "Configure a telemetry hostname and restart the integration first"
+            )
+
+        await self._ensure_valid_token()
+        telemetry_ca = await self.hass.async_add_executor_job(ca_path.read_text)
+        session = async_get_clientsession(self.hass)
+        ssl_context = self._get_ssl_context()
+        headers = {
+            "Authorization": f"Bearer {self._access_token}",
+            "Content-Type": "application/json",
+        }
+        body = {
+            "vins": [vin],
+            "config": {
+                "hostname": hostname,
+                "port": int(port),
+                "ca": telemetry_ca,
+                "fields": _FLEET_TELEMETRY_FIELDS,
+            },
+        }
+        url = f"https://{PROXY_HOST}:{PROXY_PORT}{API_FLEET_TELEMETRY_CONFIG}"
+        async with session.post(
+            url,
+            headers=headers,
+            json=body,
+            ssl=ssl_context,
+            timeout=aiohttp.ClientTimeout(total=30),
+        ) as response:
+            if response.status != 200:
+                text = await response.text()
+                raise RuntimeError(
+                    f"Fleet Telemetry configuration failed: {response.status} - {text}"
+                )
+            return await response.json()
 
     def get_vehicle_config(self, vin: str) -> dict[str, Any] | None:
         """Get vehicle configuration."""
@@ -253,27 +345,3 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             if vehicle["vin"] == vin:
                 return vehicle
         return None
-
-    def get_update_interval(self, vehicle_data: dict[str, Any]) -> int:
-        """Determine update interval based on vehicle state."""
-        if not vehicle_data or "response" not in vehicle_data:
-            return UPDATE_INTERVAL_VEHICLE_DATA
-
-        response = vehicle_data["response"]
-        charge_state = response.get("charge_state", {})
-        drive_state = response.get("drive_state", {})
-
-        # Charging - frequent updates
-        if charge_state.get("charging_state") == "Charging":
-            return UPDATE_INTERVAL_CHARGING
-
-        # Driving - frequent updates
-        if drive_state.get("shift_state") not in (None, "P"):
-            return UPDATE_INTERVAL_AWAKE
-
-        # Awake but not charging/driving
-        if response.get("state") == "online":
-            return UPDATE_INTERVAL_AWAKE
-
-        # Asleep - normal interval
-        return UPDATE_INTERVAL_VEHICLE_DATA

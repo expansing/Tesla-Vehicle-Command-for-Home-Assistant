@@ -1,6 +1,6 @@
 # Tesla Vehicle Command Services
 
-tesla_vehicle_command.set_charge_schedule:
+set_charge_schedule:
   name: Set Charge Schedule
   description: Set scheduled charging for the vehicle
   fields:
@@ -32,7 +32,7 @@ tesla_vehicle_command.set_charge_schedule:
             - sunday
           multiple: true
 
-tesla_vehicle_command.set_precondition_schedule:
+set_precondition_schedule:
   name: Set Precondition Schedule
   description: Set scheduled preconditioning for the vehicle
   fields:
@@ -74,7 +74,7 @@ tesla_vehicle_command.set_precondition_schedule:
           step: 0.5
           unit_of_measurement: "°C"
 
-tesla_vehicle_command.send_navigation:
+send_navigation:
   name: Send Navigation Destination
   description: Send a destination to the vehicle navigation
   fields:
@@ -89,19 +89,13 @@ tesla_vehicle_command.send_navigation:
       description: Destination latitude
       required: true
       selector:
-        number:
-          min: -90
-          max: 90
-          step: 0.000001
+        text:
     longitude:
       name: Longitude
       description: Destination longitude
       required: true
       selector:
-        number:
-          min: -180
-          max: 180
-          step: 0.000001
+        text:
     name:
       name: Location Name
       description: Name of the destination
@@ -109,7 +103,18 @@ tesla_vehicle_command.send_navigation:
       selector:
         text:
 
-tesla_vehicle_command.set_valet_mode:
+configure_fleet_telemetry:
+  name: Configure Fleet Telemetry
+  description: Register the configured Fleet Telemetry receiver for a vehicle.
+  fields:
+    vin:
+      name: Vehicle VIN
+      description: VIN of the vehicle to stream telemetry.
+      required: true
+      selector:
+        text:
+
+set_valet_mode:
   name: Set Valet Mode
   description: Enable or disable valet mode
   fields:
@@ -133,7 +138,7 @@ tesla_vehicle_command.set_valet_mode:
         text:
           type: password
 
-tesla_vehicle_command.set_speed_limit:
+set_speed_limit:
   name: Set Speed Limit
   description: Activate speed limit mode
   fields:
