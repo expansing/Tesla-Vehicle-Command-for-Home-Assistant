@@ -18,8 +18,6 @@ SEAT_POSITIONS = [
     (1, "Front Right"),
     (2, "Rear Left"),
     (3, "Rear Right"),
-    (4, "Third Row Left"),
-    (5, "Third Row Right"),
 ]
 
 
@@ -69,21 +67,18 @@ class TeslaSeatHeaterSelect(TeslaVehicleCommandEntity, SelectEntity):
         response = vehicle_data.get("response", {})
         climate = response.get("climate_state", {})
 
-        # Seat heater levels are in climate_state.seat_heater_left, etc.
         seat_keys = [
-            "seat_heater_left",      # 0 - Front Left
-            "seat_heater_right",     # 1 - Front Right
-            "seat_heater_rear_left", # 2 - Rear Left
-            "seat_heater_rear_right",# 3 - Rear Right
-            "seat_heater_third_left",# 4 - Third Row Left
-            "seat_heater_third_right",# 5 - Third Row Right
+            "seat_heater_left",
+            "seat_heater_right",
+            "seat_heater_rear_left",
+            "seat_heater_rear_right",
         ]
 
         if self._seat_index < len(seat_keys):
-            level = climate.get(seat_keys[self._seat_index], 0)
+            level = climate.get(seat_keys[self._seat_index])
             if 0 <= level <= 3:
                 return SEAT_HEATER_OPTIONS[level]
-        return "Off"
+        return None
 
     async def async_select_option(self, option: str) -> None:
         level = SEAT_HEATER_OPTIONS.index(option)

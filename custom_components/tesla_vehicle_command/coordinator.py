@@ -4,29 +4,24 @@ from __future__ import annotations
 
 import logging
 import ssl
-from datetime import timedelta
+from datetime import datetime, timedelta
 from typing import Any
 
 import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
 from .const import (
     API_COMMAND,
     API_FLEET_TELEMETRY_CONFIG,
-    API_VEHICLE_DATA,
     API_WAKE_UP,
     COMMAND_BODIES,
     COMMANDS,
-    CONF_FLEET_API_BASE_URL,
     CONF_TELEMETRY_HOSTNAME,
-    CONF_TELEMETRY_POLLING_REDUCTION,
     CONF_TELEMETRY_PORT,
-    CONF_UPDATE_INTERVAL,
-    DEFAULT_TELEMETRY_POLLING_REDUCTION,
-    DEFAULT_UPDATE_INTERVAL,
     DOMAIN,
     PROXY_HOST,
     PROXY_PORT,
@@ -38,24 +33,55 @@ _LOGGER = logging.getLogger(__name__)
 _FLEET_TELEMETRY_FIELDS = {
     "Soc": {"interval_seconds": 60},
     "BatteryLevel": {"interval_seconds": 60},
+    "RatedRange": {"interval_seconds": 60},
     "EstBatteryRange": {"interval_seconds": 60},
     "IdealBatteryRange": {"interval_seconds": 60},
     "DetailedChargeState": {"interval_seconds": 60},
     "ChargeLimitSoc": {"interval_seconds": 300},
     "TimeToFullCharge": {"interval_seconds": 60},
+    "ChargerVoltage": {"interval_seconds": 60},
+    "ChargeAmps": {"interval_seconds": 60},
     "ACChargingPower": {"interval_seconds": 60},
     "DCChargingPower": {"interval_seconds": 60},
+    "ACChargingEnergyIn": {"interval_seconds": 60},
+    "DCChargingEnergyIn": {"interval_seconds": 60},
     "ChargePortDoorOpen": {"interval_seconds": 60},
     "InsideTemp": {"interval_seconds": 300},
     "OutsideTemp": {"interval_seconds": 300},
+    "HvacLeftTemperatureRequest": {"interval_seconds": 300},
+    "HvacRightTemperatureRequest": {"interval_seconds": 300},
+    "HvacFanStatus": {"interval_seconds": 60},
     "HvacPower": {"interval_seconds": 60},
+    "PreconditioningEnabled": {"interval_seconds": 60},
+    "ClimateKeeperMode": {"interval_seconds": 300},
+    "DefrostMode": {"interval_seconds": 60},
+    "SeatHeaterLeft": {"interval_seconds": 60},
+    "SeatHeaterRight": {"interval_seconds": 60},
+    "SeatHeaterRearLeft": {"interval_seconds": 60},
+    "SeatHeaterRearRight": {"interval_seconds": 60},
+    "SeatHeaterRearCenter": {"interval_seconds": 60},
+    "HvacSteeringWheelHeatLevel": {"interval_seconds": 60},
     "Locked": {"interval_seconds": 60},
     "SentryMode": {"interval_seconds": 300},
+    "DoorState": {"interval_seconds": 60},
+    "DriverSeatOccupied": {"interval_seconds": 60},
     "Gear": {"interval_seconds": 2},
     "VehicleSpeed": {"interval_seconds": 2},
+    "GpsHeading": {"interval_seconds": 2},
+    "Location": {"interval_seconds": 2},
     "Odometer": {"interval_seconds": 300},
     "Version": {"interval_seconds": 3600},
+    "FdWindow": {"interval_seconds": 60},
+    "FpWindow": {"interval_seconds": 60},
+    "RdWindow": {"interval_seconds": 60},
+    "RpWindow": {"interval_seconds": 60},
+    "TpmsPressureFl": {"interval_seconds": 300},
+    "TpmsPressureFr": {"interval_seconds": 300},
+    "TpmsPressureRl": {"interval_seconds": 300},
+    "TpmsPressureRr": {"interval_seconds": 300},
 }
+
+_TELEMETRY_STORE_VERSION = 2
 
 
 class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
@@ -73,19 +99,20 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self._vehicles = entry.data.get("vehicles", [])
         self._access_token: str | None = None
         self._token_expires_at: float = 0
-        self._update_interval = int(
-            entry.options.get(CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL)
+        self._telemetry_store = Store[dict[str, Any]](
+            hass,
+            _TELEMETRY_STORE_VERSION,
+            f"{DOMAIN}.{entry.entry_id}.telemetry",
         )
-        self._telemetry_polling_reduction = entry.options.get(
-            CONF_TELEMETRY_POLLING_REDUCTION, DEFAULT_TELEMETRY_POLLING_REDUCTION
-        )
-        self._telemetry_active: dict[str, bool] = {}
+        self._telemetry_receiver_available = False
+        self._telemetry_metadata: dict[str, dict[str, Any]] = {}
+        self._telemetry_raw_signals: dict[str, dict[str, Any]] = {}
 
         super().__init__(
             hass,
             _LOGGER,
             name=DOMAIN,
-            update_interval=timedelta(seconds=self._update_interval),
+            update_interval=None,
         )
 
     @property
@@ -98,48 +125,150 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """Return current access token."""
         return self._access_token
 
-    def is_telemetry_active(self, vin: str) -> bool:
-        """Check if telemetry is actively providing data for a vehicle."""
-        return self._telemetry_active.get(vin, False)
+    def set_telemetry_receiver_available(self, available: bool) -> None:
+        """Set whether the local Fleet Telemetry receiver is reachable."""
+        self._telemetry_receiver_available = available
 
-    def set_telemetry_active(self, vin: str, active: bool) -> None:
-        """Set telemetry active status for a vehicle."""
-        self._telemetry_active[vin] = active
+    def record_telemetry_update(
+        self,
+        vin: str,
+        received_fields: set[str],
+        processed_fields: set[str],
+    ) -> None:
+        """Record a successfully processed telemetry message for a vehicle."""
+        self._telemetry_metadata[vin] = {
+            "last_received": datetime.now().astimezone(),
+            "received_fields": sorted(received_fields),
+            "processed_fields": sorted(processed_fields),
+        }
 
-    def get_effective_update_interval(self, vin: str) -> int:
-        """Get effective update interval considering telemetry."""
-        if self._telemetry_polling_reduction and self.is_telemetry_active(vin):
-            # Reduce polling to 5 minutes when telemetry is active
-            return max(300, self._update_interval)
-        return self._update_interval
+    def get_telemetry_status(self, vin: str) -> dict[str, Any]:
+        """Return telemetry health and diagnostic metadata for a vehicle."""
+        metadata = self._telemetry_metadata.get(vin, {})
+        last_received = metadata.get("last_received")
+        if last_received and datetime.now().astimezone() - last_received <= timedelta(
+            minutes=15
+        ):
+            state = "receiving"
+        elif last_received:
+            state = "stale"
+        elif self._telemetry_receiver_available:
+            state = "waiting"
+        else:
+            state = "unavailable"
+
+        return {"state": state, **metadata}
+
+    @staticmethod
+    def _empty_response() -> dict[str, dict[str, Any]]:
+        """Return the Fleet API-shaped state used before telemetry arrives."""
+        return {
+            "charge_state": {},
+            "climate_state": {},
+            "drive_state": {},
+            "vehicle_state": {},
+        }
+
+    def _empty_telemetry_data(self) -> dict[str, dict[str, Any]]:
+        """Return empty telemetry-backed data for configured vehicles."""
+        return {
+            vehicle["vin"]: {"response": self._empty_response()}
+            for vehicle in self._vehicles
+        }
+
+    async def async_load_telemetry_cache(self) -> None:
+        """Restore the last telemetry state without reading vehicle data from Tesla."""
+        stored_cache = await self._telemetry_store.async_load()
+        data = self._empty_telemetry_data()
+        stored_data = (
+            stored_cache.get("vehicles", {})
+            if isinstance(stored_cache, dict) and "vehicles" in stored_cache
+            else stored_cache
+        )
+        if isinstance(stored_data, dict):
+            for vin in data:
+                cached_vehicle = stored_data.get(vin)
+                cached_response = (
+                    cached_vehicle.get("response")
+                    if isinstance(cached_vehicle, dict)
+                    else None
+                )
+                if isinstance(cached_response, dict):
+                    data[vin] = {"response": cached_response}
+
+        if not isinstance(stored_cache, dict):
+            self.async_set_updated_data(data)
+            return
+
+        for vin, metadata in stored_cache.get("metadata", {}).items():
+            if vin not in data or not isinstance(metadata, dict):
+                continue
+            last_received = metadata.get("last_received")
+            if isinstance(last_received, str):
+                try:
+                    last_received = datetime.fromisoformat(last_received)
+                except ValueError:
+                    continue
+            if isinstance(last_received, datetime):
+                self._telemetry_metadata[vin] = {
+                    "last_received": last_received,
+                    "received_fields": metadata.get("received_fields", []),
+                    "processed_fields": metadata.get("processed_fields", []),
+                }
+
+        raw_signals = stored_cache.get("raw_signals", {})
+        if isinstance(raw_signals, dict):
+            self._telemetry_raw_signals = {
+                vin: signals
+                for vin, signals in raw_signals.items()
+                if vin in data and isinstance(signals, dict)
+            }
+        self.async_set_updated_data(data)
+
+    def get_telemetry_raw_signals(self, vin: str) -> dict[str, Any]:
+        """Return persisted raw signals used to reassemble delta records."""
+        return dict(self._telemetry_raw_signals.get(vin, {}))
+
+    def _telemetry_store_payload(self) -> dict[str, Any]:
+        """Serialize telemetry state and diagnostics for local storage."""
+        metadata = {
+            vin: {
+                **details,
+                "last_received": details["last_received"].isoformat(),
+            }
+            for vin, details in self._telemetry_metadata.items()
+            if isinstance(details.get("last_received"), datetime)
+        }
+        return {
+            "vehicles": self.data if isinstance(self.data, dict) else {},
+            "metadata": metadata,
+            "raw_signals": self._telemetry_raw_signals,
+        }
+
+    def set_telemetry_data(
+        self,
+        vin: str,
+        response: dict[str, Any],
+        received_fields: set[str] | None = None,
+        processed_fields: set[str] | None = None,
+        raw_signals: dict[str, Any] | None = None,
+    ) -> None:
+        """Publish and persist state sourced exclusively from telemetry."""
+        if received_fields is not None and processed_fields is not None:
+            self.record_telemetry_update(vin, received_fields, processed_fields)
+        if raw_signals is not None:
+            self._telemetry_raw_signals[vin] = dict(raw_signals)
+
+        updated_data = dict(self.data or self._empty_telemetry_data())
+        updated_data[vin] = {"response": response}
+        self.async_set_updated_data(updated_data)
+        self._telemetry_store.async_delay_save(
+            self._telemetry_store_payload, 30
+        )
 
     async def _async_update_data(self) -> dict[str, Any]:
-        """Fetch data from all vehicles."""
-        if not self.proxy_manager.is_running:
-            raise UpdateFailed("Proxy not running")
-
-        # Ensure we have a valid token
-        await self._ensure_valid_token()
-
-        data = {}
-        for vehicle in self._vehicles:
-            vin = vehicle["vin"]
-            try:
-                # Check if we should skip polling due to active telemetry
-                if self._telemetry_polling_reduction and self.is_telemetry_active(vin):
-                    _LOGGER.debug("Skipping Fleet API poll for %s - telemetry active", vin)
-                    # Return cached data if available
-                    if vin in self.data:
-                        data[vin] = self.data[vin]
-                        continue
-                
-                vehicle_data = await self._fetch_vehicle_data(vin)
-                data[vin] = vehicle_data
-            except Exception as err:
-                _LOGGER.error("Error fetching data for %s: %s", vin, err)
-                data[vin] = {"error": str(err)}
-
-        return data
+        """Return cached telemetry state without polling Tesla vehicle data."""
+        return self.data or self._empty_telemetry_data()
 
     async def _ensure_valid_token(self) -> None:
         """Ensure we have a valid access token."""
@@ -204,42 +333,6 @@ class TeslaVehicleCommandCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         self.hass.config_entries.async_update_entry(self.entry, data=new_data)
 
         _LOGGER.debug("Refreshed access token")
-
-    async def _fetch_vehicle_data(self, vin: str) -> dict[str, Any]:
-        """Fetch read-only vehicle data from the regional Fleet API."""
-        fleet_api_base_url = self.entry.data.get(CONF_FLEET_API_BASE_URL)
-        if not fleet_api_base_url:
-            raise UpdateFailed("Fleet API base URL is not configured")
-
-        session = async_get_clientsession(self.hass)
-        url = f"{fleet_api_base_url}{API_VEHICLE_DATA.format(vin=vin)}"
-        headers = {"Authorization": f"Bearer {self._access_token}"}
-
-        async with session.get(
-            url,
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=30),
-        ) as resp:
-            if resp.status == 401:
-                # Token might be expired, force refresh
-                self._token_expires_at = 0
-                await self._ensure_valid_token()
-                headers["Authorization"] = f"Bearer {self._access_token}"
-                async with session.get(
-                    url,
-                    headers=headers,
-                    timeout=aiohttp.ClientTimeout(total=30),
-                ) as retry_resp:
-                    if retry_resp.status != 200:
-                        text = await retry_resp.text()
-                        raise UpdateFailed(f"Vehicle data fetch failed: {retry_resp.status} - {text}")
-                    return await retry_resp.json()
-
-            if resp.status != 200:
-                text = await resp.text()
-                raise UpdateFailed(f"Vehicle data fetch failed: {resp.status} - {text}")
-
-            return await resp.json()
 
     async def _get_ssl_context(self) -> aiohttp.ClientSSLContext:
         """Get SSL context for proxy communication."""

@@ -12,7 +12,6 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     API_COMMAND,
-    API_VEHICLE_DATA,
     API_VEHICLES,
     API_WAKE_UP,
     COMMAND_BODIES,
@@ -102,12 +101,6 @@ class TeslaVehicleCommandAPI:
         """Get list of vehicles."""
         result = await self._request("GET", API_VEHICLES)
         return result.get("response", [])
-
-    async def get_vehicle_data(self, vin: str) -> dict[str, Any]:
-        """Get vehicle data."""
-        path = API_VEHICLE_DATA.format(vin=vin)
-        result = await self._request("GET", path)
-        return result
 
     async def wake_up(self, vin: str) -> dict[str, Any]:
         """Wake up vehicle."""
