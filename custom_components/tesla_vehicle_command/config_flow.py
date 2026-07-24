@@ -26,8 +26,6 @@ from .const import (
     CONF_FLEET_API_BASE_URL,
     CONF_TELEMETRY_HOSTNAME,
     CONF_TELEMETRY_PORT,
-    CONF_TELEMETRY_POLLING_REDUCTION,
-    CONF_UPDATE_INTERVAL,
     CONF_VEHICLES,
     CONF_VIN,
     CONF_NAME,
@@ -36,12 +34,8 @@ from .const import (
     FLEET_API_BASE_URL_EU,
     FLEET_API_BASE_URL_NA,
     DEFAULT_TELEMETRY_PORT,
-    DEFAULT_TELEMETRY_POLLING_REDUCTION,
-    DEFAULT_UPDATE_INTERVAL,
     MAX_TELEMETRY_PORT,
-    MAX_UPDATE_INTERVAL,
     MIN_TELEMETRY_PORT,
-    MIN_UPDATE_INTERVAL,
     OAUTH2_AUTHORIZE,
     OAUTH2_SCOPES,
     OAUTH2_TOKEN,
@@ -440,35 +434,18 @@ class TeslaVehicleCommandOptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage the polling interval."""
+        """Manage Fleet Telemetry receiver settings."""
         if user_input is not None:
             return self.async_create_entry(title="", data=user_input)
 
-        current_interval = self.config_entry.options.get(
-            CONF_UPDATE_INTERVAL, DEFAULT_UPDATE_INTERVAL
-        )
         telemetry_hostname = self.config_entry.options.get(
             CONF_TELEMETRY_HOSTNAME, ""
         )
         telemetry_port = self.config_entry.options.get(
             CONF_TELEMETRY_PORT, DEFAULT_TELEMETRY_PORT
         )
-        telemetry_polling_reduction = self.config_entry.options.get(
-            CONF_TELEMETRY_POLLING_REDUCTION, DEFAULT_TELEMETRY_POLLING_REDUCTION
-        )
         schema = vol.Schema(
             {
-                vol.Required(
-                    CONF_UPDATE_INTERVAL, default=current_interval
-                ): selector.NumberSelector(
-                    selector.NumberSelectorConfig(
-                        min=MIN_UPDATE_INTERVAL,
-                        max=MAX_UPDATE_INTERVAL,
-                        step=30,
-                        unit_of_measurement="seconds",
-                        mode=selector.NumberSelectorMode.BOX,
-                    )
-                ),
                 vol.Optional(
                     CONF_TELEMETRY_HOSTNAME, default=telemetry_hostname
                 ): str,
@@ -482,9 +459,6 @@ class TeslaVehicleCommandOptionsFlow(config_entries.OptionsFlow):
                         mode=selector.NumberSelectorMode.BOX,
                     )
                 ),
-                vol.Optional(
-                    CONF_TELEMETRY_POLLING_REDUCTION, default=telemetry_polling_reduction
-                ): selector.BooleanSelector(),
             }
         )
 

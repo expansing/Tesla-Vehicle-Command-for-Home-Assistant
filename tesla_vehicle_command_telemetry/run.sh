@@ -40,7 +40,7 @@ cat > "$CONFIG_FILE" <<EOF
     "V": ["zmq"],
     "alerts": ["logger"],
     "errors": ["logger"],
-    "connectivity": ["logger"]
+    "connectivity": ["zmq", "logger"]
   },
   "zmq": {
     "addr": "tcp://*:5284"

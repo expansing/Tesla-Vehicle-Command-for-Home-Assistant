@@ -61,6 +61,7 @@
   },
   "entity": {
     "sensor": {
+      "telemetry_status": { "name": "Telemetry Status" },
       "battery_level": { "name": "Battery Level" },
       "battery_range": { "name": "Battery Range" },
       "ideal_battery_range": { "name": "Ideal Battery Range" },
@@ -122,8 +123,6 @@
       "seat_heater_1": { "name": "Front Right Seat Heater" },
       "seat_heater_2": { "name": "Rear Left Seat Heater" },
       "seat_heater_3": { "name": "Rear Right Seat Heater" },
-      "seat_heater_4": { "name": "Third Row Left Seat Heater" },
-      "seat_heater_5": { "name": "Third Row Right Seat Heater" },
       "steering_heater": { "name": "Steering Wheel Heater" }
     },
     "button": {

@@ -350,10 +350,56 @@ async def async_setup_entry(
     entities = []
     for vehicle in coordinator.vehicles:
         vin = vehicle["vin"]
+        entities.append(TeslaTelemetryStatusSensor(coordinator, vin, vehicle["name"]))
         for description in SENSOR_DESCRIPTIONS:
             entities.append(TeslaSensorEntity(coordinator, vin, vehicle["name"], description))
 
     async_add_entities(entities)
+
+
+class TeslaTelemetryStatusSensor(TeslaVehicleCommandEntity, SensorEntity):
+    """Diagnostic sensor reporting Fleet Telemetry data flow for a vehicle."""
+
+    _attr_icon = "mdi:transmission-tower"
+    _attr_entity_category = "diagnostic"
+    _attr_has_entity_name = True
+    _attr_should_poll = True
+    _attr_translation_key = "telemetry_status"
+
+    def __init__(
+        self,
+        coordinator: TeslaVehicleCommandCoordinator,
+        vin: str,
+        vehicle_name: str,
+    ) -> None:
+        """Initialize the telemetry status sensor."""
+        super().__init__(coordinator, vin, vehicle_name)
+        self._attr_unique_id = f"{vin}_telemetry_status"
+
+    @property
+    def native_value(self) -> str:
+        """Return whether telemetry records are arriving for this vehicle."""
+        return self.coordinator.get_telemetry_status(self.vin)["state"]
+
+    @property
+    def available(self) -> bool:
+        """Expose receiver state even if the fallback Fleet API poll fails."""
+        return True
+
+    @property
+    def extra_state_attributes(self) -> dict[str, Any]:
+        """Return the most recent telemetry record diagnostics."""
+        metadata = self.coordinator.get_telemetry_status(self.vin)
+        last_received = metadata.get("last_received")
+        return {
+            "last_received": last_received.isoformat() if last_received else None,
+            "received_fields": metadata.get("received_fields", []),
+            "processed_fields": metadata.get("processed_fields", []),
+            "unprocessed_fields": sorted(
+                set(metadata.get("received_fields", []))
+                - set(metadata.get("processed_fields", []))
+            ),
+        }
 
 
 class TeslaSensorEntity(TeslaVehicleCommandEntity, SensorEntity):

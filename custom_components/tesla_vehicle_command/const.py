@@ -27,7 +27,6 @@ CONF_NAME = "name"
 CONF_PRIVATE_KEY_PATH = "private_key_path"
 CONF_TELEMETRY_HOSTNAME = "telemetry_hostname"
 CONF_TELEMETRY_PORT = "telemetry_port"
-CONF_UPDATE_INTERVAL = "update_interval"
 
 # OAuth2
 OAUTH2_AUTHORIZE = "https://auth.tesla.com/oauth2/v3/authorize"
@@ -50,9 +49,12 @@ PROXY_PORT = 4443
 PROXY_HOST = "local-tesla-vehicle-command-proxy"
 PROXY_TIMEOUT = 30
 
+# Telemetry settings
+TELEMETRY_ADDON_SLUG = "tesla_vehicle_command_telemetry"
+TELEMETRY_ZMQ_PORT = 5284
+
 # API endpoints (proxied through tesla-http-proxy)
 API_VEHICLES = "/api/1/vehicles"
-API_VEHICLE_DATA = "/api/1/vehicles/{vin}/vehicle_data"
 API_WAKE_UP = "/api/1/vehicles/{vin}/wake_up"
 API_COMMAND = "/api/1/vehicles/{vin}/command/{command}"
 API_FLEET_TELEMETRY_CONFIG = "/api/1/vehicles/fleet_telemetry_config"
@@ -110,15 +112,6 @@ SEAT_HEATER_OFF = 0
 SEAT_HEATER_LOW = 1
 SEAT_HEATER_MEDIUM = 2
 SEAT_HEATER_HIGH = 3
-
-# Update intervals
-DEFAULT_UPDATE_INTERVAL = 30
-MIN_UPDATE_INTERVAL = 30
-MAX_UPDATE_INTERVAL = 900
-
-# Telemetry polling reduction
-CONF_TELEMETRY_POLLING_REDUCTION = "telemetry_polling_reduction"
-DEFAULT_TELEMETRY_POLLING_REDUCTION = True
 
 # Fleet Telemetry settings
 DEFAULT_TELEMETRY_PORT = 4443

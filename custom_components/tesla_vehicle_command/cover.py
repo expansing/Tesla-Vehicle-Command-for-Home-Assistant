@@ -31,7 +31,6 @@ async def async_setup_entry(
             TeslaTrunkEntity(coordinator, vin, vehicle["name"], "rear", "Trunk"),
             TeslaTrunkEntity(coordinator, vin, vehicle["name"], "front", "Frunk"),
             TeslaWindowsEntity(coordinator, vin, vehicle["name"]),
-            TeslaSunroofEntity(coordinator, vin, vehicle["name"]),
         ])
 
     async_add_entities(entities)
@@ -65,9 +64,8 @@ class TeslaTrunkEntity(TeslaVehicleCommandEntity, CoverEntity):
         vehicle_state = response.get("vehicle_state", {})
 
         if self._trunk_type == "rear":
-            return not vehicle_state.get("trunk", False)
-        else:
-            return not vehicle_state.get("ft", False)
+            return not vehicle_state.get("rt", False)
+        return not vehicle_state.get("ft", False)
 
     @property
     def is_opening(self) -> bool:
@@ -120,7 +118,7 @@ class TeslaWindowsEntity(TeslaVehicleCommandEntity, CoverEntity):
             vehicle_state.get("rd_window"),
             vehicle_state.get("rp_window"),
         ]
-        return all(w is not None and w <= 1 for w in windows)
+        return all(window == 0 for window in windows)
 
     async def async_open_cover(self, **kwargs) -> None:
         """Vent windows."""
@@ -130,56 +128,4 @@ class TeslaWindowsEntity(TeslaVehicleCommandEntity, CoverEntity):
     async def async_close_cover(self, **kwargs) -> None:
         """Close windows."""
         await self.coordinator.async_send_command(self.vin, "window_close")
-        await self.coordinator.async_request_refresh()
-
-
-class TeslaSunroofEntity(TeslaVehicleCommandEntity, CoverEntity):
-    """Cover entity for Tesla sunroof."""
-
-    _attr_device_class = CoverDeviceClass.WINDOW
-    _attr_supported_features = CoverEntityFeature.OPEN | CoverEntityFeature.CLOSE | CoverEntityFeature.SET_POSITION
-
-    def __init__(
-        self,
-        coordinator: TeslaVehicleCommandCoordinator,
-        vin: str,
-        vehicle_name: str,
-    ) -> None:
-        """Initialize the sunroof entity."""
-        super().__init__(coordinator, vin, vehicle_name)
-        self._attr_unique_id = f"{vin}_sunroof"
-        self._attr_name = "Sunroof"
-
-    @property
-    def current_cover_position(self) -> int | None:
-        """Return current position (0-100)."""
-        vehicle_data = self.coordinator.data.get(self.vin, {})
-        response = vehicle_data.get("response", {})
-        vehicle_state = response.get("vehicle_state", {})
-        sunroof = vehicle_state.get("sun_roof_percent_open")
-        if sunroof is not None:
-            return int(sunroof)
-        return None
-
-    @property
-    def is_closed(self) -> bool | None:
-        pos = self.current_cover_position
-        return pos == 0 if pos is not None else None
-
-    async def async_open_cover(self, **kwargs) -> None:
-        """Open sunroof."""
-        await self.coordinator.async_send_command(self.vin, "sunroof", {"state": "open"})
-        await self.coordinator.async_request_refresh()
-
-    async def async_close_cover(self, **kwargs) -> None:
-        """Close sunroof."""
-        await self.coordinator.async_send_command(self.vin, "sunroof", {"state": "close"})
-        await self.coordinator.async_request_refresh()
-
-    async def async_set_cover_position(self, **kwargs) -> None:
-        """Set sunroof position."""
-        position = kwargs.get("position", 0)
-        await self.coordinator.async_send_command(
-            self.vin, "sunroof", {"state": "vent", "percent": position}
-        )
         await self.coordinator.async_request_refresh()
