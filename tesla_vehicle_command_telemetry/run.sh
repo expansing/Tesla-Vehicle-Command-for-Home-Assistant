@@ -4,6 +4,7 @@ set -eu
 CONFIG_DIR=/config/tesla_vehicle_command
 CERT_FILE="$CONFIG_DIR/telemetry-cert.pem"
 KEY_FILE="$CONFIG_DIR/telemetry-key.pem"
+CLIENT_CA_FILE="$CONFIG_DIR/telemetry-ca.pem"
 CONFIG_FILE=/tmp/fleet-telemetry-config.json
 receiver_pid=""
 
@@ -17,7 +18,7 @@ shutdown() {
 
 trap shutdown INT TERM
 
-while [ ! -r "$CERT_FILE" ] || [ ! -r "$KEY_FILE" ]; do
+while [ ! -r "$CERT_FILE" ] || [ ! -r "$KEY_FILE" ] || [ ! -r "$CLIENT_CA_FILE" ]; do
     echo "Waiting for Tesla Fleet Telemetry certificate files..."
     sleep 2
 done
@@ -47,7 +48,10 @@ cat > "$CONFIG_FILE" <<EOF
   },
   "tls": {
     "server_cert": "$CERT_FILE",
-    "server_key": "$KEY_FILE"
+    "server_key": "$KEY_FILE",
+    "client_ca": "$CLIENT_CART_FILE",
+    "server_key": "$KEY_FILE",
+    "client_ca": "$CLIENT_CA_FILE"
   }
 }
 EOF
