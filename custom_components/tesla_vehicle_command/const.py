@@ -27,6 +27,7 @@ CONF_NAME = "name"
 CONF_PRIVATE_KEY_PATH = "private_key_path"
 CONF_TELEMETRY_HOSTNAME = "telemetry_hostname"
 CONF_TELEMETRY_PORT = "telemetry_port"
+CONF_TELEMETRY_ZMQ_ENDPOINT = "telemetry_zmq_endpoint"
 CONF_UPDATE_INTERVAL = "update_interval"
 
 # OAuth2
@@ -49,6 +50,10 @@ FLEET_API_BASE_URL_EU = "https://fleet-api.prd.eu.vn.cloud.tesla.com"
 PROXY_PORT = 4443
 PROXY_HOST = "local-tesla-vehicle-command-proxy"
 PROXY_TIMEOUT = 30
+
+# Telemetry settings
+TELEMETRY_ZMQ_ENDPOINT = "tcp://tesla-vehicle-command-telemetry:5284"
+TELEMETRY_ADDON_SLUG = "tesla_vehicle_command_telemetry"
 
 # API endpoints (proxied through tesla-http-proxy)
 API_VEHICLES = "/api/1/vehicles"

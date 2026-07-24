@@ -7,24 +7,63 @@ import json
 import logging
 from typing import Any
 
+import aiohttp
 import zmq
 import zmq.asyncio
 
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.dispatcher import async_dispatcher_send
 
-from .const import DOMAIN
+from .const import DOMAIN, TELEMETRY_ZMQ_ENDPOINT
 from .coordinator import TeslaVehicleCommandCoordinator
 
 _LOGGER = logging.getLogger(__name__)
 
-# ZMQ endpoint for telemetry data (from run.sh)
-# The telemetry add-on is accessible via its slug on the HA internal network
-# HA converts underscores to hyphens in add-on hostnames
-TELEMETRY_ZMQ_ENDPOINT = "tcp://local-tesla-vehicle-command-telemetry:5284"
-
 # Signal for telemetry updates
 SIGNAL_TELEMETRY_UPDATE = f"{DOMAIN}_telemetry_update"
+
+
+async def _discover_telemetry_zmq_endpoint(hass: HomeAssistant) -> str:
+    """Discover the telemetry addon's ZMQ endpoint via Supervisor API."""
+    try:
+        session = async_get_clientsession(hass)
+        # Query Supervisor API for installed addons
+        async with session.get(
+            "http://supervisor/addons",
+            timeout=aiohttp.ClientTimeout(total=10),
+        ) as resp:
+            if resp.status != 200:
+                _LOGGER.warning("Failed to query Supervisor addons API: %s", resp.status)
+                return TELEMETRY_ZMQ_ENDPOINT
+            
+            data = await resp.json()
+            addons = data.get("data", {}).get("addons", [])
+            
+            for addon in addons:
+                if addon.get("slug") == TELEMETRY_ADDON_SLUG:
+                    # Found the telemetry addon
+                    hostname = addon.get("hostname")
+                    if hostname:
+                        # The addon's hostname in the HA network
+                        endpoint = f"tcp://{hostname}:5284"
+                        _LOGGER.info("Discovered telemetry addon ZMQ endpoint: %s", endpoint)
+                        return endpoint
+                    
+                    # Fallback: try to get IP from network info
+                    network = addon.get("network", {})
+                    ip = network.get("ip")
+                    if ip:
+                        endpoint = f"tcp://{ip}:5284"
+                        _LOGGER.info("Discovered telemetry addon ZMQ endpoint via IP: %s", endpoint)
+                        return endpoint
+            
+            _LOGGER.warning("Telemetry addon '%s' not found in Supervisor API", TELEMETRY_ADDON_SLUG)
+            return TELEMETRY_ZMQ_ENDPOINT
+            
+    except Exception as err:
+        _LOGGER.warning("Failed to discover telemetry addon endpoint: %s", err)
+        return TELEMETRY_ZMQ_ENDPOINT
 
 
 class TelemetryConsumer:
@@ -34,12 +73,12 @@ class TelemetryConsumer:
         self,
         hass: HomeAssistant,
         coordinator: TeslaVehicleCommandCoordinator,
-        zmq_endpoint: str = TELEMETRY_ZMQ_ENDPOINT,
+        zmq_endpoint: str | None = None,
     ) -> None:
         """Initialize the telemetry consumer."""
         self.hass = hass
         self.coordinator = coordinator
-        self.zmq_endpoint = zmq_endpoint
+        self._zmq_endpoint = zmq_endpoint
         self._context: zmq.asyncio.Context | None = None
         self._socket: zmq.asyncio.Socket | None = None
         self._task: asyncio.Task | None = None
@@ -50,15 +89,19 @@ class TelemetryConsumer:
         if self._running:
             return
 
+        # Discover the ZMQ endpoint if not provided
+        if self._zmq_endpoint is None:
+            self._zmq_endpoint = await _discover_telemetry_zmq_endpoint(self.hass)
+        
         self._context = zmq.asyncio.Context()
         self._socket = self._context.socket(zmq.SUB)
         self._socket.setsockopt(zmq.SUBSCRIBE, b"")
-        _LOGGER.info("Connecting to Fleet Telemetry ZMQ at %s", self.zmq_endpoint)
-        self._socket.connect(self.zmq_endpoint)
+        _LOGGER.info("Connecting to Fleet Telemetry ZMQ at %s", self._zmq_endpoint)
+        self._socket.connect(self._zmq_endpoint)
 
         self._running = True
         self._task = asyncio.create_task(self._consume_loop())
-        _LOGGER.info("Started Fleet Telemetry consumer on %s", self.zmq_endpoint)
+        _LOGGER.info("Started Fleet Telemetry consumer on %s", self._zmq_endpoint)
 
     async def async_stop(self) -> None:
         """Stop consuming telemetry data."""
@@ -137,23 +180,32 @@ class TelemetryConsumer:
         # Mark telemetry as active for this vehicle
         self.coordinator.set_telemetry_active(vin, True)
 
+        # Handle different topic formats:
+        # - tesla_telemetry_V (repo addon format)
+        # - V (local addon format)
+        # - connectivity, alerts, errors
+        actual_topic = topic
+        if topic.startswith("tesla_telemetry_"):
+            actual_topic = topic[len("tesla_telemetry_"):]
+            _LOGGER.debug("Normalized topic from %s to %s", topic, actual_topic)
+
         # Update based on topic
-        if topic == "V":
+        if actual_topic == "V":
             # Vehicle telemetry data - contains the actual signal values
             _LOGGER.info("Received vehicle telemetry data for %s", vin)
             await self._process_vehicle_signals(vin, response, data)
-        elif topic == "connectivity":
+        elif actual_topic == "connectivity":
             # Connectivity events - vehicle online/offline
             _LOGGER.info("Received connectivity event for %s: %s", vin, data.get("status", "unknown"))
             await self._process_connectivity(vin, response, data)
-        elif topic == "alerts":
+        elif actual_topic == "alerts":
             # Alerts
             _LOGGER.warning("Telemetry alert for %s: %s", vin, data)
-        elif topic == "errors":
+        elif actual_topic == "errors":
             # Errors
             _LOGGER.warning("Telemetry error for %s: %s", vin, data)
         else:
-            _LOGGER.debug("Unknown telemetry topic: %s", topic)
+            _LOGGER.debug("Unknown telemetry topic: %s (original: %s)", actual_topic, topic)
 
         # Update coordinator data and trigger refresh
         self.coordinator.data[vin] = {"response": response}

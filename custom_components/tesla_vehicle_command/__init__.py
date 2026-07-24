@@ -71,11 +71,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     coordinator = TeslaVehicleCommandCoordinator(hass, entry, proxy_manager)
     await coordinator.async_config_entry_first_refresh()
 
-    # Initialize telemetry consumer if configured
-    telemetry_consumer: TelemetryConsumer | None = None
-    telemetry_hostname = entry.options.get("telemetry_hostname", "").strip()
-    if telemetry_hostname:
-        telemetry_consumer = await async_setup_telemetry_consumer(hass, coordinator)
+    # Initialize telemetry consumer (auto-discovers endpoint via Supervisor API)
+    telemetry_consumer = await async_setup_telemetry_consumer(hass, coordinator)
 
     hass.data[DOMAIN][entry.entry_id] = {
         "coordinator": coordinator,

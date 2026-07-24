@@ -27,6 +27,7 @@ from .const import (
     CONF_TELEMETRY_HOSTNAME,
     CONF_TELEMETRY_PORT,
     CONF_TELEMETRY_POLLING_REDUCTION,
+    CONF_TELEMETRY_ZMQ_ENDPOINT,
     CONF_UPDATE_INTERVAL,
     CONF_VEHICLES,
     CONF_VIN,
@@ -456,6 +457,9 @@ class TeslaVehicleCommandOptionsFlow(config_entries.OptionsFlow):
         telemetry_polling_reduction = self.config_entry.options.get(
             CONF_TELEMETRY_POLLING_REDUCTION, DEFAULT_TELEMETRY_POLLING_REDUCTION
         )
+        telemetry_zmq_endpoint = self.config_entry.options.get(
+            CONF_TELEMETRY_ZMQ_ENDPOINT, ""
+        )
         schema = vol.Schema(
             {
                 vol.Required(
@@ -485,6 +489,9 @@ class TeslaVehicleCommandOptionsFlow(config_entries.OptionsFlow):
                 vol.Optional(
                     CONF_TELEMETRY_POLLING_REDUCTION, default=telemetry_polling_reduction
                 ): selector.BooleanSelector(),
+                vol.Optional(
+                    CONF_TELEMETRY_ZMQ_ENDPOINT, default=telemetry_zmq_endpoint
+                ): str,
             }
         )
 
