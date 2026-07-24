@@ -13,6 +13,7 @@ from homeassistant.components.sensor import (
 )
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import (
+    EntityCategory,
     PERCENTAGE,
     UnitOfLength,
     UnitOfTemperature,
@@ -361,7 +362,7 @@ class TeslaTelemetryStatusSensor(TeslaVehicleCommandEntity, SensorEntity):
     """Diagnostic sensor reporting Fleet Telemetry data flow for a vehicle."""
 
     _attr_icon = "mdi:transmission-tower"
-    _attr_entity_category = "diagnostic"
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_has_entity_name = True
     _attr_should_poll = True
     _attr_translation_key = "telemetry_status"
